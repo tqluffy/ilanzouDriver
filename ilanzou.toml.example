@@ -1,0 +1,11 @@
+username = ""
+password = ""
+ip = ""
+
+# "0" means the account root. A non-zero ID limits operations to that folder
+# and its descendants.
+root_folder_id = "0"
+
+upload_concurrency = 4
+download_concurrency = 4
+request_timeout = "10m"

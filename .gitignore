@@ -2,3 +2,4 @@
 /cmd/ilanzou/ilanzou
 *.test
 *.out
+ilanzou.toml

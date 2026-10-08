@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -35,6 +36,8 @@ const (
 	partSize    = 8 * 1024 * 1024
 	userAgent   = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
 )
+
+var uploadKeyTimestamp atomic.Int64
 
 // Client contains the account session used by the iLanZou API.
 type Client struct {
@@ -91,6 +94,13 @@ func NewClient(username, password string) *Client {
 // SetIP configures the optional X-Forwarded-For value used by the iLanZou API.
 func (c *Client) SetIP(ip string) *Client {
 	c.ip = ip
+	return c
+}
+
+// SetTimeout configures the maximum duration of each HTTP request.
+func (c *Client) SetTimeout(timeout time.Duration) *Client {
+	c.client.Timeout = timeout
+	c.noRedirect.Timeout = timeout
 	return c
 }
 
@@ -360,7 +370,7 @@ func (c *Client) Upload(ctx context.Context, folderID, localPath string) (Entry,
 	account := c.account
 	c.mu.Unlock()
 	now := time.Now()
-	key := fmt.Sprintf("disk/%d/%d/%d/%s/%016d", now.Year(), now.Month(), now.Day(), account, now.UnixMilli())
+	key := fmt.Sprintf("disk/%d/%d/%d/%s/%016d", now.Year(), now.Month(), now.Day(), account, nextUploadKeyTimestamp())
 	var token string
 	if info.Size() <= partSize {
 		token, err = c.uploadSingle(ctx, tokenResponse.UpToken, key, name, file, info.Size())
@@ -403,6 +413,19 @@ func (c *Client) Upload(ctx context.Context, folderID, localPath string) (Entry,
 		}
 	}
 	return Entry{}, fmt.Errorf("upload commit failed with status %d", result.List[0].Status)
+}
+
+func nextUploadKeyTimestamp() int64 {
+	now := time.Now().UnixMilli()
+	for {
+		previous := uploadKeyTimestamp.Load()
+		if now <= previous {
+			now = previous + 1
+		}
+		if uploadKeyTimestamp.CompareAndSwap(previous, now) {
+			return now
+		}
+	}
 }
 
 func (c *Client) uploadSingle(ctx context.Context, token, key, name string, file io.Reader, size int64) (string, error) {

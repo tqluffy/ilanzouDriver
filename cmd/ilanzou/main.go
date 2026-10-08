@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
+	"sync"
 
 	"ilanzou"
 )
@@ -22,13 +22,22 @@ func main() {
 }
 
 func run(args []string) error {
-	if len(args) == 0 {
+	options, positional, err := parseInvocation(args)
+	if err != nil {
+		return err
+	}
+	if len(positional) == 0 {
 		usage()
 		return nil
 	}
-	command := args[0]
-	commandArgs := args[1:]
-	if isHelp(command) {
+	command, commandArgs := positional[0], positional[1:]
+	if options.help {
+		if command == "help" && len(commandArgs) > 0 {
+			return commandUsage(commandArgs[0])
+		}
+		if command != "help" {
+			return commandUsage(command)
+		}
 		usage()
 		return nil
 	}
@@ -39,31 +48,34 @@ func run(args []string) error {
 		}
 		return commandUsage(commandArgs[0])
 	}
-	for _, arg := range commandArgs {
-		if isHelp(arg) {
-			return commandUsage(command)
-		}
+	config, err := resolveSettings(options)
+	if err != nil {
+		return err
 	}
-	username, password := os.Getenv("ILANZOU_USERNAME"), os.Getenv("ILANZOU_PASSWORD")
-	if username == "" || password == "" {
-		return errors.New("请先设置环境变量 ILANZOU_USERNAME 和 ILANZOU_PASSWORD")
+	if config.username == "" || config.password == "" {
+		return errors.New("请通过 ilanzou.toml、环境变量或 --username/--password 提供账号和密码")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	client := ilanzou.NewClient(username, password).SetIP(os.Getenv("ILANZOU_IP"))
+	client := ilanzou.NewClient(config.username, config.password).
+		SetIP(config.ip).
+		SetTimeout(config.requestTimeout)
 	if err := client.Init(ctx); err != nil {
 		return err
 	}
+	scope := newRemoteScope(client, config.rootFolderID)
 
-	args = commandArgs
 	switch command {
 	case "ls":
-		folderID := "0"
-		if len(args) > 1 {
+		folderID := config.rootFolderID
+		if len(commandArgs) > 1 {
 			return errors.New("usage: ilanzou ls [folder-id]")
 		}
-		if len(args) == 1 {
-			folderID = args[0]
+		if len(commandArgs) == 1 {
+			folderID = commandArgs[0]
+		}
+		if err := scope.requireFolder(ctx, folderID); err != nil {
+			return err
 		}
 		entries, err := client.List(ctx, folderID)
 		if err != nil {
@@ -71,81 +83,140 @@ func run(args []string) error {
 		}
 		return printJSON(entries)
 	case "mkdir":
-		if len(args) != 2 {
-			return errors.New("usage: ilanzou mkdir <parent-folder-id> <name>")
+		parentID, name := config.rootFolderID, ""
+		if len(commandArgs) == 1 {
+			name = commandArgs[0]
+		} else if len(commandArgs) == 2 {
+			parentID, name = commandArgs[0], commandArgs[1]
+		} else {
+			return errors.New("usage: ilanzou mkdir [parent-folder-id] <name>")
 		}
-		entry, err := client.MakeDir(ctx, args[0], args[1])
+		if err := scope.requireFolder(ctx, parentID); err != nil {
+			return err
+		}
+		entry, err := client.MakeDir(ctx, parentID, name)
 		if err != nil {
 			return err
 		}
 		return printJSON(entry)
 	case "upload":
-		if len(args) != 2 {
-			return errors.New("usage: ilanzou upload <folder-id> <local-file>")
+		folderID := config.rootFolderID
+		files := commandArgs
+		if len(commandArgs) == 0 {
+			return errors.New("usage: ilanzou upload [folder-id] <local-file> [local-file...]")
 		}
-		entry, err := client.Upload(ctx, args[0], args[1])
-		if err != nil {
+		if len(commandArgs) > 1 && isNumericID(commandArgs[0]) {
+			folderID, files = commandArgs[0], commandArgs[1:]
+		}
+		if err := scope.requireFolder(ctx, folderID); err != nil {
 			return err
 		}
-		return printJSON(entry)
+		entries := make([]ilanzou.Entry, len(files))
+		outcomes := make([]uploadOutcome, len(files))
+		err := runConcurrent(config.uploadConcurrency, len(files), func(index int) error {
+			entry, err := client.Upload(ctx, folderID, files[index])
+			if err != nil {
+				outcomes[index] = uploadOutcome{LocalFile: files[index], Error: err.Error()}
+				return fmt.Errorf("upload %q: %w", files[index], err)
+			}
+			entries[index] = entry
+			outcomes[index] = uploadOutcome{LocalFile: files[index], Entry: &entries[index]}
+			return nil
+		})
+		if len(files) == 1 {
+			if err != nil {
+				return err
+			}
+			return printJSON(entries[0])
+		}
+		if printErr := printJSON(outcomes); printErr != nil {
+			return printErr
+		}
+		return err
 	case "download":
-		if len(args) != 2 {
-			return errors.New("usage: ilanzou download <file-id> <local-file>")
+		if len(commandArgs) < 2 || len(commandArgs)%2 != 0 {
+			return errors.New("usage: ilanzou download <file-id> <local-file> [<file-id> <local-file>...]")
 		}
-		reader, err := client.Download(ctx, args[0])
-		if err != nil {
+		tasks := make([]downloadTask, len(commandArgs)/2)
+		outcomes := make([]downloadOutcome, len(tasks))
+		for i := range tasks {
+			tasks[i] = downloadTask{fileID: commandArgs[2*i], path: commandArgs[2*i+1]}
+			if _, err := scope.requireObject(ctx, tasks[i].fileID, false); err != nil {
+				return err
+			}
+		}
+		if err := distinctDownloadPaths(tasks); err != nil {
 			return err
 		}
-		defer reader.Close()
-		file, err := os.Create(args[1])
-		if err != nil {
-			return err
+		err := runConcurrent(config.downloadConcurrency, len(tasks), func(index int) error {
+			if err := downloadTo(ctx, client, tasks[index].fileID, tasks[index].path); err != nil {
+				outcomes[index] = downloadOutcome{FileID: tasks[index].fileID, LocalFile: tasks[index].path, Error: err.Error()}
+				return fmt.Errorf("download %q to %q: %w", tasks[index].fileID, tasks[index].path, err)
+			}
+			outcomes[index] = downloadOutcome{FileID: tasks[index].fileID, LocalFile: filepath.Clean(tasks[index].path)}
+			return nil
+		})
+		if len(tasks) == 1 {
+			if err != nil {
+				return err
+			}
+			fmt.Println(outcomes[0].LocalFile)
+			return nil
 		}
-		_, copyErr := io.Copy(file, reader)
-		closeErr := file.Close()
-		if copyErr != nil {
-			return copyErr
+		if printErr := printJSON(outcomes); printErr != nil {
+			return printErr
 		}
-		if closeErr != nil {
-			return closeErr
-		}
-		fmt.Println(filepath.Clean(args[1]))
-		return nil
+		return err
 	case "move":
-		if len(args) != 3 {
+		if len(commandArgs) != 3 {
 			return errors.New("usage: ilanzou move <file|dir> <id> <target-folder-id>")
 		}
-		isDir, err := entryKind(args[0])
+		isDir, err := entryKind(commandArgs[0])
 		if err != nil {
 			return err
 		}
-		if err := client.Move(ctx, args[1], isDir, args[2]); err != nil {
+		if _, err := scope.requireObject(ctx, commandArgs[1], isDir); err != nil {
+			return err
+		}
+		if err := scope.requireFolder(ctx, commandArgs[2]); err != nil {
+			return err
+		}
+		if isDir && scope.isDescendant(commandArgs[2], commandArgs[1]) {
+			return errors.New("cannot move a folder into itself or one of its descendants")
+		}
+		if err := client.Move(ctx, commandArgs[1], isDir, commandArgs[2]); err != nil {
 			return err
 		}
 		fmt.Println("moved")
 		return nil
 	case "rename":
-		if len(args) != 3 {
+		if len(commandArgs) != 3 {
 			return errors.New("usage: ilanzou rename <file|dir> <id> <new-name>")
 		}
-		isDir, err := entryKind(args[0])
+		isDir, err := entryKind(commandArgs[0])
 		if err != nil {
 			return err
 		}
-		if err := client.Rename(ctx, args[1], isDir, args[2]); err != nil {
+		if _, err := scope.requireObject(ctx, commandArgs[1], isDir); err != nil {
+			return err
+		}
+		if err := client.Rename(ctx, commandArgs[1], isDir, commandArgs[2]); err != nil {
 			return err
 		}
 		fmt.Println("renamed")
 		return nil
 	case "delete":
-		if len(args) != 2 {
+		if len(commandArgs) != 2 {
 			return errors.New("usage: ilanzou delete <file|dir> <id>")
 		}
-		isDir, err := entryKind(args[0])
+		isDir, err := entryKind(commandArgs[0])
 		if err != nil {
 			return err
 		}
-		if err := client.Remove(ctx, args[1], isDir); err != nil {
+		if _, err := scope.requireObject(ctx, commandArgs[1], isDir); err != nil {
+			return err
+		}
+		if err := client.Remove(ctx, commandArgs[1], isDir); err != nil {
 			return err
 		}
 		fmt.Println("deleted")
@@ -153,6 +224,96 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", command)
 	}
+}
+
+type uploadOutcome struct {
+	LocalFile string         `json:"local_file"`
+	Entry     *ilanzou.Entry `json:"entry,omitempty"`
+	Error     string         `json:"error,omitempty"`
+}
+
+type downloadTask struct {
+	fileID string
+	path   string
+}
+
+type downloadOutcome struct {
+	FileID    string `json:"file_id"`
+	LocalFile string `json:"local_file"`
+	Error     string `json:"error,omitempty"`
+}
+
+func runConcurrent(limit, count int, work func(int) error) error {
+	if count == 0 {
+		return nil
+	}
+	workers := limit
+	if workers > count {
+		workers = count
+	}
+	jobs := make(chan int)
+	errorsByIndex := make([]error, count)
+	var group sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			for index := range jobs {
+				errorsByIndex[index] = work(index)
+			}
+		}()
+	}
+	for index := 0; index < count; index++ {
+		jobs <- index
+	}
+	close(jobs)
+	group.Wait()
+	return errors.Join(errorsByIndex...)
+}
+
+func downloadTo(ctx context.Context, client *ilanzou.Client, fileID, path string) error {
+	reader, err := client.Download(ctx, fileID)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(file, reader)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func distinctDownloadPaths(tasks []downloadTask) error {
+	seen := make(map[string]bool, len(tasks))
+	for _, task := range tasks {
+		absolute, err := filepath.Abs(filepath.Clean(task.path))
+		if err != nil {
+			return err
+		}
+		if seen[absolute] {
+			return fmt.Errorf("download output path is repeated: %q", task.path)
+		}
+		seen[absolute] = true
+	}
+	return nil
+}
+
+func isNumericID(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func entryKind(value string) (bool, error) {
@@ -183,17 +344,28 @@ func usage() {
   ilanzou <命令> -h
   ilanzou help [命令]
 
-凭据：
-  从环境变量读取，不写入配置文件或命令行参数：
-  ILANZOU_USERNAME     iLanZou 账号
-  ILANZOU_PASSWORD     iLanZou 密码
-  ILANZOU_IP           可选；作为 X-Forwarded-For 发送，与上游驱动的 Ip 设置对应
+配置优先级：命令行参数 > 环境变量 > ilanzou.toml > 默认值
+  ilanzou.toml 默认在可执行文件同级目录；也可用 -c/--config 指定。
+  缺省配置文件可以不存在。示例配置见 ilanzou.toml.example。
+
+配置项、环境变量和命令行参数：
+  username             ILANZOU_USERNAME             --username
+  password             ILANZOU_PASSWORD             --password
+  ip                   ILANZOU_IP                   --ip
+  root_folder_id       ILANZOU_ROOT_FOLDER_ID       --root-folder-id
+  upload_concurrency   ILANZOU_UPLOAD_CONCURRENCY   --upload-concurrency
+  download_concurrency ILANZOU_DOWNLOAD_CONCURRENCY --download-concurrency
+  request_timeout      ILANZOU_REQUEST_TIMEOUT      --request-timeout
+  密码作为命令行参数会出现在 shell 历史和进程参数中，建议使用 TOML 或环境变量。
+
+默认值：root_folder_id="0"，上传/下载并发数均为 4，request_timeout="10m"。
+设置非 0 根目录后，所有网盘文件操作只允许访问该目录及其子目录；该根目录本身不能移动、重命名或删除。
 
 命令：
-  ls [目录ID]                           列出目录，省略时列出根目录
-  mkdir <父目录ID> <目录名>              新建目录
-  upload <目录ID> <本地文件>              上传文件
-  download <文件ID> <本地文件>            下载文件
+  ls [目录ID]                           列出目录，省略时列出配置根目录
+  mkdir [父目录ID] <目录名>               新建目录，省略父目录时使用配置根目录
+  upload [目录ID] <本地文件> [本地文件...] 上传一个或多个文件
+  download <文件ID> <本地文件> [...]       按 ID/路径对下载一个或多个文件
   move <file|dir> <对象ID> <目标目录ID>    移动文件或目录
   rename <file|dir> <对象ID> <新名称>      重命名文件或目录
   delete <file|dir> <对象ID>              永久删除文件或目录
@@ -201,38 +373,41 @@ func usage() {
 
 参数说明：
   目录ID和文件ID由 ls、mkdir、upload 的 JSON 输出提供。
-  根目录ID为 0。对象类型使用 file 表示文件，dir 表示目录。
+  文件 ID 与本地路径按对重复传入。对象类型使用 file 表示文件，dir 表示目录。
   download 会覆盖同名本地文件；delete 会删除网盘中的对象。
 
 示例（Linux/macOS）：
-  export ILANZOU_USERNAME='你的账号'
-  export ILANZOU_PASSWORD='你的密码'
-  # 可选：设置在原 iLanZou 驱动 Ip 字段中使用的客户端 IP
-  export ILANZOU_IP='你的客户端公网 IP'
+  cp ilanzou.toml.example ilanzou.toml
+  # 编辑同级 ilanzou.toml 填入账号、密码及根目录设置
   ./ilanzou ls
-  ./ilanzou mkdir 0 backup
-  ./ilanzou upload 目录ID ./报告.pdf
+  ./ilanzou -c ./ilanzou.toml ls
+  ./ilanzou mkdir backup
+  ./ilanzou upload 348006267 ./报告.pdf
+  ./ilanzou --upload-concurrency 4 upload ./a.bin ./b.bin
   ./ilanzou download 文件ID ./报告.pdf
+  ./ilanzou --download-concurrency=8 download 文件ID1 ./a.bin 文件ID2 ./b.bin
   ./ilanzou move file 文件ID 目标目录ID
   ./ilanzou rename file 文件ID 新名称.pdf
   ./ilanzou delete file 文件ID
 
 示例（Windows PowerShell）：
-  $env:ILANZOU_USERNAME = '你的账号'
-  $env:ILANZOU_PASSWORD = '你的密码'
-  # 可选
-  $env:ILANZOU_IP = '你的客户端公网 IP'
+  Copy-Item ilanzou.toml.example ilanzou.toml
   .\ilanzou.exe ls
-  .\ilanzou.exe upload 目录ID .\报告.pdf
+  .\ilanzou.exe -c .\ilanzou.toml ls
+  .\ilanzou.exe --upload-concurrency 4 upload .\a.bin .\b.bin
   .\ilanzou.exe download 文件ID .\报告.pdf
 
 选项：
-  -h, --help     显示帮助；不需要登录
+  -c, --config PATH       配置文件路径
+      --username VALUE    iLanZou 账号
+      --password VALUE    iLanZou 密码
+      --ip VALUE          作为 X-Forwarded-For 的可选客户端 IP
+      --root-folder-id ID 限定可操作的根目录
+      --upload-concurrency N   最大并发上传数
+      --download-concurrency N 最大并发下载数
+      --request-timeout DURATION 每个 HTTP 请求超时，如 30s、10m
+  -h, --help              显示帮助；不需要登录
 `)
-}
-
-func isHelp(value string) bool {
-	return value == "-h" || value == "--help"
 }
 
 func commandUsage(command string) error {
@@ -241,7 +416,8 @@ func commandUsage(command string) error {
 	case "ls":
 		help = `用法：ilanzou ls [目录ID]
 
-列出指定目录的直接子项并输出 JSON。省略目录ID时列出根目录（ID 0）。
+列出指定目录的直接子项并输出 JSON。省略目录ID时列出配置根目录。
+指定目录必须是配置根目录或其子目录。
 每个对象包含 id、name、size（字节）、modified 和 is_dir。
 
 示例：
@@ -249,29 +425,37 @@ func commandUsage(command string) error {
   ilanzou ls 348006267
 `
 	case "mkdir":
-		help = `用法：ilanzou mkdir <父目录ID> <目录名>
+		help = `用法：ilanzou mkdir [父目录ID] <目录名>
 
-在指定目录下新建目录，成功后输出包含新目录ID的 JSON。
+在指定目录下新建目录。省略父目录ID时使用配置根目录。
+父目录必须在配置根目录及其子目录中。成功后输出包含新目录ID的 JSON。
 
 示例：
-  ilanzou mkdir 0 backup
+  ilanzou mkdir backup
+  ilanzou mkdir 348006267 backup
 `
 	case "upload":
-		help = `用法：ilanzou upload <目录ID> <本地文件>
+		help = `用法：ilanzou upload [目录ID] <本地文件> [本地文件...]
 
-将本地文件上传到指定 iLanZou 目录。小文件使用七牛表单上传，较大文件使用分片上传。
+将一个或多个本地文件上传到目录。省略目录ID时使用配置根目录。
+多个文件按 --upload-concurrency 设置的并发数上传；显式目录ID必须在配置根目录内。
+小文件使用七牛表单上传，较大文件使用分片上传。
 成功后输出包含网盘文件ID的 JSON。
 
 示例：
-  ilanzou upload 0 ./报告.pdf
+  ilanzou upload ./报告.pdf
+  ilanzou --upload-concurrency 4 upload ./a.bin ./b.bin
+  ilanzou upload 348006267 ./报告.pdf
 `
 	case "download":
-		help = `用法：ilanzou download <文件ID> <本地文件>
+		help = `用法：ilanzou download <文件ID> <本地文件> [<文件ID> <本地文件>...]
 
-下载指定网盘文件到本地路径。若目标文件已存在，会被覆盖。
+下载一个或多个网盘文件。文件ID必须在配置根目录及其子目录内。
+多个文件按 --download-concurrency 设置的并发数下载。若目标文件已存在，会被覆盖。
 
 示例：
   ilanzou download 123456789 ./报告.pdf
+  ilanzou --download-concurrency 8 download 123456789 ./a.bin 123456790 ./b.bin
 `
 	case "move":
 		help = `用法：ilanzou move <file|dir> <对象ID> <目标目录ID>

@@ -23,7 +23,6 @@ type settings struct {
 	uploadConcurrency   int
 	downloadConcurrency int
 	requestTimeout      time.Duration
-	configPath          string
 }
 
 type fileSettings struct {
@@ -50,8 +49,6 @@ type globalOptions struct {
 var configEnvironment = map[string]string{
 	"username":             "ILANZOU_USERNAME",
 	"password":             "ILANZOU_PASSWORD",
-	"webdav_username":      "ILANZOU_WEBDAV_USERNAME",
-	"webdav_password":      "ILANZOU_WEBDAV_PASSWORD",
 	"ip":                   "ILANZOU_IP",
 	"root_folder_id":       "ILANZOU_ROOT_FOLDER_ID",
 	"listen":               "ILANZOU_WEBDAV_LISTEN",
@@ -63,8 +60,6 @@ var configEnvironment = map[string]string{
 var commandLineConfigKeys = map[string]string{
 	"--username":             "username",
 	"--password":             "password",
-	"--webdav-username":      "webdav_username",
-	"--webdav-password":      "webdav_password",
 	"--ip":                   "ip",
 	"--root-folder-id":       "root_folder_id",
 	"--listen":               "listen",
@@ -203,7 +198,6 @@ func resolveSettings(options globalOptions, defaultConfigName string) (settings,
 	if err != nil {
 		return settings{}, err
 	}
-	resolved.configPath = configPath
 	return resolved, nil
 }
 

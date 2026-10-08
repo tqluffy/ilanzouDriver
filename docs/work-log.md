@@ -218,3 +218,9 @@
 - 新增 `webdav_username`/`webdav_password`、`ILANZOU_WEBDAV_USERNAME`/`ILANZOU_WEBDAV_PASSWORD` 和 `--webdav-username`/`--webdav-password`。
 - HTTP Basic Auth 仅使用 WebDAV 专用凭据；iLanZou API 登录仍只使用 `username`/`password`。两项 WebDAV 凭据缺失时拒绝启动。
 - 已更新配置样例、CLI 帮助、README；配置优先级测试、`go test ./...` 及 Windows amd64 交叉编译通过，Linux/Windows 产物重建完成。
+
+## WebDAV 多用户配置（2026-10-08）
+
+- WebDAV 服务从可执行文件同级 `ilanzou-config/` 读取账号 TOML，文件名为 `<webdav_username>.ilanzou-webdav.toml`。每个 Basic Auth 用户映射到自己的 iLanZou 凭据、认证密码、根目录范围和并发设置。
+- 每个账号的 iLanZou 客户端按首次认证请求惰性初始化并缓存；`listen` 是服务级设置，可由 CLI 或环境变量覆盖，多份 TOML 中如设置必须一致。
+- 增加多账号配置加载和请求账号隔离测试；`go test ./...` 与 Windows amd64 交叉编译通过，Linux/Windows 发行产物已重建。

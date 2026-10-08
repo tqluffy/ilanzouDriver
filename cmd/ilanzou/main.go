@@ -49,18 +49,14 @@ func run(args []string) error {
 		return commandUsage(commandArgs[0])
 	}
 	if command == "stop" {
-		return stopWebDAV(configPathFor(options, "ilanzou-webdav.toml"))
+		return stopWebDAV(webDAVConfigDir(options))
 	}
-	defaultConfigName := "ilanzou.toml"
 	if command == "start" || command == "serve" {
-		defaultConfigName = "ilanzou-webdav.toml"
+		return runWebDAVCommand(command, options)
 	}
-	config, err := resolveSettings(options, defaultConfigName)
+	config, err := resolveSettings(options, "ilanzou.toml")
 	if err != nil {
 		return err
-	}
-	if command == "start" || command == "serve" {
-		return runWebDAVCommand(command, options, config)
 	}
 	if config.username == "" || config.password == "" {
 		if options.noConfig {
@@ -330,18 +326,20 @@ func usage() {
   ilanzou <命令> -h
   ilanzou help [命令]
 
-	配置优先级：命令行参数 > 环境变量 > ilanzou.toml > 默认值
-	ilanzou.toml 默认在可执行文件同级目录；也可用 -c/--config 指定。
-	WebDAV 的 start/serve 使用同目录的 ilanzou-webdav.toml。
+  配置优先级：命令行参数 > 环境变量 > ilanzou.toml > 默认值
+  ilanzou.toml 默认在可执行文件同级目录；也可用 -c/--config 指定。
+  WebDAV start/serve 从可执行文件同级 ilanzou-config/ 读取多用户配置。
+  每个账号配置文件命名为 <webdav_username>.ilanzou-webdav.toml。
   缺省配置文件可以不存在。示例配置见 ilanzou.toml.example。
   --no-config 强制跳过所有 TOML 文件；仅使用命令行、环境变量和内置默认值。
   --no-config 时账号和密码必填，缺失或参数无效会显示对应提示。
+  WebDAV 多用户服务必须加载 ilanzou-config/ 中的账号 TOML，不支持 --no-config。
 
 配置项、环境变量和命令行参数：
   username             ILANZOU_USERNAME             --username
   password             ILANZOU_PASSWORD             --password
-  webdav_username      ILANZOU_WEBDAV_USERNAME      --webdav-username
-  webdav_password      ILANZOU_WEBDAV_PASSWORD      --webdav-password
+  webdav_username      每用户 ilanzou-config TOML 字段
+  webdav_password      每用户 ilanzou-config TOML 字段
   ip                   ILANZOU_IP                   --ip
   root_folder_id       ILANZOU_ROOT_FOLDER_ID       --root-folder-id
   upload_concurrency   ILANZOU_UPLOAD_CONCURRENCY   --upload-concurrency
@@ -394,12 +392,10 @@ func usage() {
   .\ilanzou.exe download 文件ID .\报告.pdf
 
 选项：
-  -c, --config PATH       配置文件路径
+      -c, --config PATH       配置文件路径；WebDAV 服务使用配置目录
       --no-config         禁止读取 ilanzou.toml 和其他 TOML 配置文件
       --username VALUE    iLanZou 账号
       --password VALUE    iLanZou 密码
-      --webdav-username VALUE WebDAV HTTP 认证账号
-      --webdav-password VALUE WebDAV HTTP 认证密码
       --ip VALUE          作为 X-Forwarded-For 的可选客户端 IP
       --root-folder-id ID 限定可操作的根目录
       --upload-concurrency N   最大并发上传数
@@ -487,17 +483,20 @@ func commandUsage(command string) error {
 	case "start":
 		help = `用法：ilanzou-webdav start [选项]
 
-读取 ilanzou-webdav.toml 并在后台启动 WebDAV 服务。
-服务地址由 listen 配置项设置，默认 127.0.0.1:8080。
-username/password 用于 iLanZou 登录；WebDAV 客户端认证另用 webdav_username/webdav_password。
+读取可执行文件同级 ilanzou-config/ 下的账号配置并在后台启动 WebDAV 服务。
+文件名必须为 <webdav_username>.ilanzou-webdav.toml；--config/-c 可指定配置目录。
+各账号使用自己的 username/password 登录 iLanZou，WebDAV 登录凭据也分别配置。
+所有账号配置中的 listen 必须一致；可通过 --listen 覆盖全局监听地址。
 
 示例：
+  mkdir -p ilanzou-config
+  cp ilanzou-webdav.toml.example ilanzou-config/alice.ilanzou-webdav.toml
   ./ilanzou-webdav start
-  ./ilanzou-webdav --config ./webdav.toml --listen 0.0.0.0:8080 start
+  ./ilanzou-webdav --config ./ilanzou-config --listen 0.0.0.0:8080 start
   ./ilanzou-webdav stop
 `
 	case "stop":
-		help = `用法：ilanzou-webdav stop [-c 配置文件]
+		help = `用法：ilanzou-webdav stop [-c 配置目录]
 
 停止 start 启动的后台 WebDAV 服务。
 `

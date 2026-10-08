@@ -2,6 +2,7 @@ username = ""
 password = ""
 
 # 用于连接 WebDAV 服务的 Basic Auth，和上面的 iLanZou 账号分开设置。
+# 文件名必须是 <webdav_username>.ilanzou-webdav.toml。
 webdav_username = ""
 webdav_password = ""
 

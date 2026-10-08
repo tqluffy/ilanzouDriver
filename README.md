@@ -98,41 +98,40 @@ ILANZOU_USERNAME='你的账号' ILANZOU_PASSWORD='你的密码' ./ilanzou --no-c
 
 ## WebDAV 服务
 
-复制 `ilanzou-webdav.toml.example` 为 `ilanzou-webdav.toml`，分别填写 iLanZou 账号和 WebDAV 连接账号后启动。默认配置文件在可执行文件同级目录，服务默认监听 `127.0.0.1:8080`：
+在可执行文件同级创建 `ilanzou-config/`，每个 WebDAV 用户单独放一个 TOML。文件名必须等于 WebDAV 用户名加 `.ilanzou-webdav.toml`；例如用户名 `alice` 使用 `ilanzou-config/alice.ilanzou-webdav.toml`：
 
 ```sh
-cp ilanzou-webdav.toml.example dist/ilanzou-webdav.toml
-# 编辑配置后启动，命令返回时服务已在后台监听
+mkdir -p dist/ilanzou-config
+cp ilanzou-webdav.toml.example dist/ilanzou-config/alice.ilanzou-webdav.toml
+# 将文件中的 webdav_username 设为 alice，并填写两组账号密码
 ./dist/ilanzou-webdav-linux-amd64 start
 ./dist/ilanzou-webdav-linux-amd64 stop
 ```
 
-WebDAV URL 使用文件和目录名，例如 `http://127.0.0.1:8080/path/to/file-or-folder`。服务把每个路径段映射到 iLanZou 目录项，再以 ID 调用现有客户端；路径根映射到 `root_folder_id`，受该根目录范围约束。支持 `PROPFIND`、`GET`、`HEAD`、`PUT`、`MKCOL`、`DELETE`、`MOVE` 和 `COPY`。每个 WebDAV 请求都要求 HTTP Basic Auth，使用单独配置的 `webdav_username` 和 `webdav_password`；它们只验证 WebDAV 客户端，不参与 iLanZou 登录。当前服务使用 HTTP；跨不可信网络访问时应通过 HTTPS 反向代理提供加密连接。后台日志写入配置文件同目录的 `ilanzou-webdav.log`，PID 文件为 `ilanzou-webdav.pid`。
+服务启动时读取账号 TOML，客户端发送 HTTP Basic Auth 后按用户名路由到对应配置，并用该文件的 iLanZou 账号及 `root_folder_id` 执行操作。`username/password` 只用于 iLanZou 登录；`webdav_username/webdav_password` 只用于 WebDAV 认证。用户之间的账号、密码和根目录范围相互独立；新增账号或修改配置后重启服务生效。支持 `PROPFIND`、`GET`、`HEAD`、`PUT`、`MKCOL`、`DELETE`、`MOVE` 和 `COPY`。当前服务使用 HTTP；跨不可信网络访问时应通过 HTTPS 反向代理提供加密连接。PID 和日志文件写入 `ilanzou-config/`。
 
 Zotero 连接检查可在 `/dav/zotero` 创建 `zotero-test-file.prop`。服务支持 1 字节文件的创建、同内容重复 PUT、内容覆盖和删除；iLanZou 对相同内容返回已有 ID 时，覆盖流程会保留该文件。
 
-WebDAV 配置项及命令行覆盖：
+每个账号文件使用以下配置项：
 
-| TOML 键 | 环境变量 | 命令行参数 | 默认值 |
-|---|---|---|---|
-| `username` | `ILANZOU_USERNAME` | `--username` | 空 |
-| `password` | `ILANZOU_PASSWORD` | `--password` | 空 |
-| `webdav_username` | `ILANZOU_WEBDAV_USERNAME` | `--webdav-username` | 空，必填 |
-| `webdav_password` | `ILANZOU_WEBDAV_PASSWORD` | `--webdav-password` | 空，必填 |
-| `ip` | `ILANZOU_IP` | `--ip` | 空 |
-| `listen` | `ILANZOU_WEBDAV_LISTEN` | `--listen` | `127.0.0.1:8080` |
-| `root_folder_id` | `ILANZOU_ROOT_FOLDER_ID` | `--root-folder-id` | `"0"` |
-| `upload_concurrency` | `ILANZOU_UPLOAD_CONCURRENCY` | `--upload-concurrency` | `4` |
-| `download_concurrency` | `ILANZOU_DOWNLOAD_CONCURRENCY` | `--download-concurrency` | `32` |
-| `request_timeout` | `ILANZOU_REQUEST_TIMEOUT` | `--request-timeout` | `"10m"` |
+| TOML 键 | 用途 | 默认值 |
+|---|---|---|
+| `username` / `password` | 此用户的 iLanZou 账号 | 必填 |
+| `webdav_username` / `webdav_password` | WebDAV Basic Auth；`webdav_username` 同时决定文件名 | 必填 |
+| `root_folder_id` | 此用户暴露的根目录 ID | `"0"` |
+| `ip` | iLanZou 请求使用的客户端 IP | 空 |
+| `upload_concurrency` | 此用户的并发上传数 | `4` |
+| `download_concurrency` | 此用户的并发下载数 | `32` |
+| `request_timeout` | 此用户的请求超时 | `"10m"` |
+| `listen` | 服务监听地址；各文件中如有设置必须相同 | `127.0.0.1:8080` |
 
-优先级为命令行参数 > 环境变量 > `ilanzou-webdav.toml` > 内置默认值。命令行选项可放在 `start` 前后，例如：
+监听地址可用 `ILANZOU_WEBDAV_LISTEN` 或 `--listen` 作为全局覆盖。账号和目录字段需写在各自 TOML 中；`--config/-c` 对 WebDAV 的含义是指定配置目录：
 
 ```sh
-./dist/ilanzou-webdav-linux-amd64 --config ./webdav.toml --listen 0.0.0.0:8080 start
+./dist/ilanzou-webdav-linux-amd64 --config ./ilanzou-config --listen 0.0.0.0:8080 start
 ```
 
-Windows 可执行文件使用方式相同；`start` 会启动独立后台进程，`stop` 读取同目录 PID 文件并停止服务。
+Windows 可执行文件使用方式相同；`start` 会启动独立后台进程。`stop` 使用同一配置目录中的 PID 文件停止服务。
 
 ## 作为库引入
 

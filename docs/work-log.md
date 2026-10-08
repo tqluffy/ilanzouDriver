@@ -158,3 +158,19 @@
 - 既有 64 文件下载预置脚本用相同内容写入所有不同名称的文件；该模式会重复 MD5。结合 OpenList 的 `upToken="-1"` 处理，此前除首个样本外的空 token 错误很可能由未处理秒传响应触发。不同内容的并发上传也曾出现空 token，因此 Qiniu 状态/响应字段诊断仍有价值。
 - OpenList 当前同样会从普通 Qiniu 响应读取 `token` 并调用 `/results`，没有通用的空 token 校验；本分支增加了该校验及 Qiniu 状态错误透传。公开同类报告包括 [Alist #5928](https://github.com/AlistGo/alist/issues/5928)、[Alist #8104](https://github.com/AlistGo/alist/issues/8104) 和 [Alist 文档讨论 #380](https://github.com/AlistGo/docs/discussions/380)。
 - 重新构建 Linux/Windows CLI、Linux `.so/.a`、Windows `.dll/.a`；未运行网盘上传或远端功能测试。源码依据：[Alist iLanZou](https://github.com/AlistGo/alist/blob/main/drivers/ilanzou/driver.go)、[OpenList iLanZou](https://github.com/OpenListTeam/OpenList/blob/main/drivers/ilanzou/driver.go)、[七牛直传响应](https://developer.qiniu.com/kodo/1312/upload)、[七牛分片完成响应](https://developer.qiniu.com/kodo/6368/complete-multipart-upload)。
+
+## 修复分支实际文件操作验证（2026-10-08）
+
+- 使用 `dist/ilanzou.toml` 提供账号、密码和 IP；该文件的 `root_folder_id` 是 `347497588`，本次 CLI 明确用 `--root-folder-id 404038274` 覆盖，将操作限制在 `/测试/ilanzouDriver/`。
+- 用修复分支构建的 Linux CLI 完成四组上传、下载和内容校验：1 B、1 MiB、内容相同但文件名不同的第二个 1 MiB 文件、8 MiB+1 B。四组上传成功，下载长度及 SHA-256 均匹配。
+- 本轮生成并已删除的测试对象：
+
+| 文件 ID | 文件名 | 大小 |
+|---:|---|---:|
+| `41048377977` | `ilz-fix-4589c4a476b86c47-1byte.bin` | 1 B |
+| `41048378033` | `ilz-fix-4589c4a476b86c47-single-1mib.bin` | 1 MiB |
+| `41048378058` | `ilz-fix-4589c4a476b86c47-duplicate-1mib.bin` | 1 MiB |
+| `41048378092` | `ilz-fix-4589c4a476b86c47-multipart-8mib-plus-1.bin` | 8 MiB+1 B |
+
+- 四个对象的精确 ID 删除均成功；按本轮唯一前缀复查，剩余条目数为 0。其他远端目录和旧测试前缀均未操作。
+- 重复内容第二个样本返回了新 ID；CLI 未记录 `/getUpToken` 的原始响应，因此无法确认该样本是否实际命中 `upToken="-1"` 分支。以上通过不代表高并发或 Qiniu 非成功响应路径均已验证。

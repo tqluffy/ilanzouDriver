@@ -15,6 +15,8 @@ import (
 type settings struct {
 	username            string
 	password            string
+	webdavUsername      string
+	webdavPassword      string
 	ip                  string
 	rootFolderID        string
 	listen              string
@@ -27,6 +29,8 @@ type settings struct {
 type fileSettings struct {
 	Username            string `toml:"username"`
 	Password            string `toml:"password"`
+	WebDAVUsername      string `toml:"webdav_username"`
+	WebDAVPassword      string `toml:"webdav_password"`
 	IP                  string `toml:"ip"`
 	RootFolderID        string `toml:"root_folder_id"`
 	Listen              string `toml:"listen"`
@@ -46,6 +50,8 @@ type globalOptions struct {
 var configEnvironment = map[string]string{
 	"username":             "ILANZOU_USERNAME",
 	"password":             "ILANZOU_PASSWORD",
+	"webdav_username":      "ILANZOU_WEBDAV_USERNAME",
+	"webdav_password":      "ILANZOU_WEBDAV_PASSWORD",
 	"ip":                   "ILANZOU_IP",
 	"root_folder_id":       "ILANZOU_ROOT_FOLDER_ID",
 	"listen":               "ILANZOU_WEBDAV_LISTEN",
@@ -57,6 +63,8 @@ var configEnvironment = map[string]string{
 var commandLineConfigKeys = map[string]string{
 	"--username":             "username",
 	"--password":             "password",
+	"--webdav-username":      "webdav_username",
+	"--webdav-password":      "webdav_password",
 	"--ip":                   "ip",
 	"--root-folder-id":       "root_folder_id",
 	"--listen":               "listen",
@@ -139,6 +147,8 @@ func resolveSettings(options globalOptions, defaultConfigName string) (settings,
 	values := map[string]string{
 		"username":             "",
 		"password":             "",
+		"webdav_username":      "",
+		"webdav_password":      "",
 		"ip":                   "",
 		"root_folder_id":       "0",
 		"listen":               "127.0.0.1:8080",
@@ -168,6 +178,8 @@ func resolveSettings(options globalOptions, defaultConfigName string) (settings,
 			}
 			setTomlValue("username", configured.Username)
 			setTomlValue("password", configured.Password)
+			setTomlValue("webdav_username", configured.WebDAVUsername)
+			setTomlValue("webdav_password", configured.WebDAVPassword)
 			setTomlValue("ip", configured.IP)
 			setTomlValue("root_folder_id", configured.RootFolderID)
 			setTomlValue("listen", configured.Listen)
@@ -217,6 +229,8 @@ func applyOverrides(values, commandLine map[string]string) (settings, error) {
 	return settings{
 		username:            values["username"],
 		password:            values["password"],
+		webdavUsername:      values["webdav_username"],
+		webdavPassword:      values["webdav_password"],
 		ip:                  values["ip"],
 		rootFolderID:        values["root_folder_id"],
 		listen:              values["listen"],

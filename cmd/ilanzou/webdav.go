@@ -33,6 +33,9 @@ func startWebDAV(options globalOptions, config settings) error {
 	if config.username == "" || config.password == "" {
 		return errors.New("WebDAV 启动需要账号和密码，请在 ilanzou-webdav.toml、环境变量或命令行中设置")
 	}
+	if config.webdavUsername == "" || config.webdavPassword == "" {
+		return errors.New("WebDAV HTTP 认证需要 webdav_username 和 webdav_password，请通过配置文件、ILANZOU_WEBDAV_USERNAME/ILANZOU_WEBDAV_PASSWORD 或 --webdav-username/--webdav-password 设置")
+	}
 	baseDir := filepath.Dir(config.configPath)
 	if absolute, err := filepath.Abs(baseDir); err == nil {
 		baseDir = absolute
@@ -124,6 +127,9 @@ func serveWebDAV(config settings) error {
 	if config.username == "" || config.password == "" {
 		return errors.New("WebDAV 启动需要账号和密码，请在 ilanzou-webdav.toml、环境变量或命令行中设置")
 	}
+	if config.webdavUsername == "" || config.webdavPassword == "" {
+		return errors.New("WebDAV HTTP 认证需要 webdav_username 和 webdav_password，请通过配置文件、环境变量或命令行设置")
+	}
 	ctx, cancel := signalContext()
 	defer cancel()
 	client := ilanzou.NewClient(config.username, config.password).
@@ -139,8 +145,8 @@ func serveWebDAV(config settings) error {
 	server := &http.Server{
 		Handler: webdav.NewHandler(
 			ilanzou.NewScopedClient(client, config.rootFolderID),
-			config.username,
-			config.password,
+			config.webdavUsername,
+			config.webdavPassword,
 			config.uploadConcurrency,
 			config.downloadConcurrency,
 		),

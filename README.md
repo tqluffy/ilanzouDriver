@@ -98,7 +98,7 @@ ILANZOU_USERNAME='你的账号' ILANZOU_PASSWORD='你的密码' ./ilanzou --no-c
 
 ## WebDAV 服务
 
-复制 `ilanzou-webdav.toml.example` 为 `ilanzou-webdav.toml`，填写 iLanZou 账号后启动。默认配置文件在可执行文件同级目录，服务默认监听 `127.0.0.1:8080`：
+复制 `ilanzou-webdav.toml.example` 为 `ilanzou-webdav.toml`，分别填写 iLanZou 账号和 WebDAV 连接账号后启动。默认配置文件在可执行文件同级目录，服务默认监听 `127.0.0.1:8080`：
 
 ```sh
 cp ilanzou-webdav.toml.example dist/ilanzou-webdav.toml
@@ -107,7 +107,7 @@ cp ilanzou-webdav.toml.example dist/ilanzou-webdav.toml
 ./dist/ilanzou-webdav-linux-amd64 stop
 ```
 
-WebDAV URL 使用文件和目录名，例如 `http://127.0.0.1:8080/path/to/file-or-folder`。服务把每个路径段映射到 iLanZou 目录项，再以 ID 调用现有客户端；路径根映射到 `root_folder_id`，受该根目录范围约束。支持 `PROPFIND`、`GET`、`HEAD`、`PUT`、`MKCOL`、`DELETE`、`MOVE` 和 `COPY`。每个 WebDAV 请求都要求 HTTP Basic Auth，用户名和密码复用配置中的 iLanZou 账号密码。当前服务使用 HTTP；跨不可信网络访问时应通过 HTTPS 反向代理提供加密连接。后台日志写入配置文件同目录的 `ilanzou-webdav.log`，PID 文件为 `ilanzou-webdav.pid`。
+WebDAV URL 使用文件和目录名，例如 `http://127.0.0.1:8080/path/to/file-or-folder`。服务把每个路径段映射到 iLanZou 目录项，再以 ID 调用现有客户端；路径根映射到 `root_folder_id`，受该根目录范围约束。支持 `PROPFIND`、`GET`、`HEAD`、`PUT`、`MKCOL`、`DELETE`、`MOVE` 和 `COPY`。每个 WebDAV 请求都要求 HTTP Basic Auth，使用单独配置的 `webdav_username` 和 `webdav_password`；它们只验证 WebDAV 客户端，不参与 iLanZou 登录。当前服务使用 HTTP；跨不可信网络访问时应通过 HTTPS 反向代理提供加密连接。后台日志写入配置文件同目录的 `ilanzou-webdav.log`，PID 文件为 `ilanzou-webdav.pid`。
 
 Zotero 连接检查可在 `/dav/zotero` 创建 `zotero-test-file.prop`。服务支持 1 字节文件的创建、同内容重复 PUT、内容覆盖和删除；iLanZou 对相同内容返回已有 ID 时，覆盖流程会保留该文件。
 
@@ -117,6 +117,8 @@ WebDAV 配置项及命令行覆盖：
 |---|---|---|---|
 | `username` | `ILANZOU_USERNAME` | `--username` | 空 |
 | `password` | `ILANZOU_PASSWORD` | `--password` | 空 |
+| `webdav_username` | `ILANZOU_WEBDAV_USERNAME` | `--webdav-username` | 空，必填 |
+| `webdav_password` | `ILANZOU_WEBDAV_PASSWORD` | `--webdav-password` | 空，必填 |
 | `ip` | `ILANZOU_IP` | `--ip` | 空 |
 | `listen` | `ILANZOU_WEBDAV_LISTEN` | `--listen` | `127.0.0.1:8080` |
 | `root_folder_id` | `ILANZOU_ROOT_FOLDER_ID` | `--root-folder-id` | `"0"` |

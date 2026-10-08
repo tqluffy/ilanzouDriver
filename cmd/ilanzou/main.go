@@ -340,6 +340,8 @@ func usage() {
 配置项、环境变量和命令行参数：
   username             ILANZOU_USERNAME             --username
   password             ILANZOU_PASSWORD             --password
+  webdav_username      ILANZOU_WEBDAV_USERNAME      --webdav-username
+  webdav_password      ILANZOU_WEBDAV_PASSWORD      --webdav-password
   ip                   ILANZOU_IP                   --ip
   root_folder_id       ILANZOU_ROOT_FOLDER_ID       --root-folder-id
   upload_concurrency   ILANZOU_UPLOAD_CONCURRENCY   --upload-concurrency
@@ -396,6 +398,8 @@ func usage() {
       --no-config         禁止读取 ilanzou.toml 和其他 TOML 配置文件
       --username VALUE    iLanZou 账号
       --password VALUE    iLanZou 密码
+      --webdav-username VALUE WebDAV HTTP 认证账号
+      --webdav-password VALUE WebDAV HTTP 认证密码
       --ip VALUE          作为 X-Forwarded-For 的可选客户端 IP
       --root-folder-id ID 限定可操作的根目录
       --upload-concurrency N   最大并发上传数
@@ -485,6 +489,7 @@ func commandUsage(command string) error {
 
 读取 ilanzou-webdav.toml 并在后台启动 WebDAV 服务。
 服务地址由 listen 配置项设置，默认 127.0.0.1:8080。
+username/password 用于 iLanZou 登录；WebDAV 客户端认证另用 webdav_username/webdav_password。
 
 示例：
   ./ilanzou-webdav start

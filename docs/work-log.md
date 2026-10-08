@@ -46,6 +46,15 @@
 
 此前还有一个 1 B 测试对象留在父目录 `/测试/`（目录 ID `347025631`）：ID `41026194253`，名称 `ilz-check-623788fb039e83831d7e27f9-1.bin`。该对象不在 `/测试/ilanzouDriver/` 中，未在本次尺寸矩阵中操作；对它的删除请求也被服务端以 HTTP 409/403 拒绝。
 
+在用户提供 IP 并加入 XFF 支持后，另有 4 个 1 B 重测对象创建在 `/测试/ilanzouDriver/`，均可下载到匹配的单字节内容，但上传最终结果仍返回“token不能为空”错误：
+
+| 对象 ID | 文件名 |
+|---:|---|
+| `41026503936` | `ilz-xff-onebyte-a51c0d453c15eb83.txt` |
+| `41026504393` | `ilz-xff-onebyte-75f0037e8aa71431.txt` |
+| `41026505093` | `ilz-xff-onebyte-cae5e8014eab9343.txt` |
+| `41026519010` | `ilz-xff-onebyte-4ec7a598ad371542.txt` |
+
 ## 已发现问题与代码调整
 
 - 初版将 iLanZou API 查询参数交给 `url.Values.Encode()` 排序。现已改为按上游顺序构造登录和普通 API 请求参数，并补齐上游请求头；下载重定向本身也使用固定顺序。
@@ -54,7 +63,9 @@
 - 原仓库历史显示小文件上传的 `fileSize/1024 + 1` 修复（`a2dc45a8`）已包含在当前独立版。
 - 原仓库还包含 iLanZou IP 封锁修复（`f25be154`）：对 API 和下载重定向附加可配置的 `X-Forwarded-For`；以及 API `Accept-Encoding` 头修复（`6812ec9a`）。此前独立版缺少这两项，目前已加入可选 `ILANZOU_IP`/`Client.SetIP` 和对应请求头。
 - API 请求现在声明与上游相同的 `Accept-Encoding`，并可解码 gzip/deflate；加入后，对目标目录 ID `404038274` 的只读列目录成功，返回 10 个条目。
-- 当前账号测试时尚未提供 `ILANZOU_IP` 值；IP 转发改动尚未用账号可用的客户端 IP 做现场验证。此前的删除 409/403 均发生在设置该值之前，因此 IP 封锁是上游提交提示的可能原因，但尚未确认。
+- 已使用用户提供的 IP 进行 XFF 重测；读取目标目录成功，但删除请求仍返回 HTTP 409。1 B 上传仍由结果接口返回“token不能为空”，尽管生成文件存在且其字节可正常下载。IP 转发已实测，未解决这两项现象。
+- 原仓库 Resty 通过 `createMultipartHeader` 按 `name` 后 `filename` 顺序构造文件 part，并对非 2xx Qiniu 响应继续尝试 `/7n/results`。独立版现已对齐该 multipart 头格式，并以结果接口作为提交结果判断；1 B 重测后仍返回 token 为空。
+- 小文件 multipart 现在使用完整 `multipart.Writer` 生成请求体，并对齐原仓库的 `Content-Disposition` 参数顺序；Qiniu 非 2xx 响应不再提前中断，而是继续走 `/7n/results`。使用 XFF 的 1 B 样本仍在 `/7n/results` 返回“token不能为空”，但下载字节与源数据相同。
 - 早期验证脚本在成功清理路径中清空测试目录 ID 后，延迟清理仍用空 ID 查询并删除返回对象。用户报告发生误删；该脚本逻辑是误删风险来源。用户表示自行恢复，未执行恢复操作。
 
 ## Git 状态

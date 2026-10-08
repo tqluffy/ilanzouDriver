@@ -406,7 +406,7 @@ func (c *Client) Upload(ctx context.Context, folderID, localPath string) (Entry,
 }
 
 func (c *Client) uploadSingle(ctx context.Context, token, key, name string, file io.Reader, size int64) (string, error) {
-	body, contentType, contentLength, err := singleUploadBody(token, key, name, file, size)
+	body, contentType, contentLength, err := singleUploadBody(token, key, name, file)
 	if err != nil {
 		return "", err
 	}
@@ -515,9 +515,9 @@ func (c *Client) qiniuDo(request *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("Qiniu request failed: HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
-	}
+	// Match the upstream Resty flow: an HTTP status alone is not treated as a
+	// transport error; the iLanZou upload-result endpoint decides whether the
+	// uploaded object was committed.
 	return body, nil
 }
 
@@ -724,9 +724,9 @@ func orderedAPIQuery(uuid, token string, proved bool, timestamp int64, extra url
 	return strings.Join(params, "&")
 }
 
-func singleUploadBody(token, key, name string, file io.Reader, size int64) (io.Reader, string, int64, error) {
-	var prefix bytes.Buffer
-	writer := multipart.NewWriter(&prefix)
+func singleUploadBody(token, key, name string, file io.Reader) (io.Reader, string, int64, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
 	for _, field := range [][2]string{{"token", token}, {"key", key}, {"fname", name}} {
 		if err := writer.WriteField(field[0], field[1]); err != nil {
 			return nil, "", 0, err
@@ -737,21 +737,25 @@ func singleUploadBody(token, key, name string, file io.Reader, size int64) (io.R
 		contentType = "application/octet-stream"
 	}
 	header := make(textproto.MIMEHeader)
-	header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": name}))
+	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, escapeMultipartValue(name)))
 	header.Set("Content-Type", contentType)
-	if _, err := writer.CreatePart(header); err != nil {
+	part, err := writer.CreatePart(header)
+	if err != nil {
 		return nil, "", 0, err
 	}
-	closeStart := prefix.Len()
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, "", 0, err
+	}
 	if err := writer.Close(); err != nil {
 		return nil, "", 0, err
 	}
-	all := prefix.Bytes()
-	start := append([]byte(nil), all[:closeStart]...)
-	end := append([]byte(nil), all[closeStart:]...)
-	return io.MultiReader(bytes.NewReader(start), file, bytes.NewReader(end)), writer.FormDataContentType(), int64(len(start)+len(end)) + size, nil
+	return bytes.NewReader(body.Bytes()), writer.FormDataContentType(), int64(body.Len()), nil
 }
 
 func base64URL(value []byte) string {
 	return base64.URLEncoding.EncodeToString(value)
+}
+
+func escapeMultipartValue(value string) string {
+	return strings.NewReplacer("\\", "\\\\", `"`, `\"`).Replace(value)
 }

@@ -23,6 +23,24 @@ Alist 入口在 `drivers/ilanzou/driver.go`，签名和登录请求在 `util.go`
 go build -o ilanzou ./cmd/ilanzou
 ```
 
+仓库同时提供无需 Go 环境即可运行的单文件可执行程序：
+
+- Linux x86-64：`dist/ilanzou-linux-amd64`
+- Windows x86-64：`dist/ilanzou-windows-amd64.exe`
+
+两种版本均以纯 Go 方式构建，运行时不依赖外部库。查看完整帮助：
+
+```sh
+./dist/ilanzou-linux-amd64 -h
+./dist/ilanzou-linux-amd64 upload -h
+```
+
+Windows PowerShell：
+
+```powershell
+.\dist\ilanzou-windows-amd64.exe -h
+```
+
 ## 使用
 
 通过环境变量提供凭据，避免密码进入命令行历史：

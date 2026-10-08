@@ -40,7 +40,9 @@
 | 100,000,000 B | `41026248211` | `ilz-sweep-8c909b1346e98d08-100000000.bin` |
 | 200,000,000 B | `41026254224` | `ilz-sweep-8c909b1346e98d08-200000000.bin` |
 
-删除接口对已核对的 1 KiB 测试对象返回 HTTP 409；响应正文为 HTML 403 页面。按固定参数顺序和上游浏览器请求头重试后仍相同。其余尺寸的删除未逐个执行；矩阵中的对象目前仍保留。
+对上述 9 个对象逐一执行移动、重命名和删除测试。9 个对象都成功移入 `/测试/ilanzouDriver/` 下的临时目录、完成重命名、再移回并恢复原名；随后按原 ID/名称尝试删除，9 次均返回 HTTP 409。已复核 9 个对象仍以原 ID 和原名位于目标目录。临时操作目录 ID `404039154` 当前为空，但删除该目录也返回 HTTP 409，因此目录仍存在。
+
+固定参数顺序和上游浏览器请求头下，删除接口仍返回 HTTP 409；正文曾观测到 HTML 403 页面。没有测试对象被成功删除。
 
 此前还有一个 1 B 测试对象留在父目录 `/测试/`（目录 ID `347025631`）：ID `41026194253`，名称 `ilz-check-623788fb039e83831d7e27f9-1.bin`。该对象不在 `/测试/ilanzouDriver/` 中，未在本次尺寸矩阵中操作；对它的删除请求也被服务端以 HTTP 409/403 拒绝。
 
@@ -53,7 +55,7 @@
 
 ## Git 状态
 
-- 最近提交：`9d4d9fe Preserve iLanZou API query parameter order`
+- 查询参数顺序修复提交：`9d4d9fe Preserve iLanZou API query parameter order`
+- 首次工作日志提交：`728e1a8 Document iLanZou implementation status`
 - 提交身份：`tqluffy <tqluffy@qq.com>`
-- 该提交包含 API 参数顺序修复、README 更新及重新构建的 Linux/Windows CLI。
-- 日志写入前工作区干净。
+- 查询参数顺序修复提交包含 README 更新及重新构建的 Linux/Windows CLI。

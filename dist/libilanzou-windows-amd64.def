@@ -1,0 +1,13 @@
+LIBRARY libilanzou-windows-amd64.dll
+EXPORTS
+    IlanzouNew
+    IlanzouInit
+    IlanzouList
+    IlanzouMakeDir
+    IlanzouUpload
+    IlanzouDownload
+    IlanzouMove
+    IlanzouRename
+    IlanzouDelete
+    IlanzouClose
+    IlanzouFreeString

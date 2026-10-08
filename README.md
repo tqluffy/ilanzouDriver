@@ -94,6 +94,14 @@ Linux x86-64 提供 C ABI 库，其他支持 C ABI/FFI 的语言也可以调用�
 - `dist/libilanzou-linux-amd64.a`：静态库
 - `dist/libilanzou-linux-amd64.h`：对应头文件
 
+Windows amd64 提供对应的 C ABI 文件：
+
+- `dist/libilanzou-windows-amd64.dll`：动态库
+- `dist/libilanzou-windows-amd64.a`：静态库
+- `dist/libilanzou-windows-amd64.dll.a`：MinGW 动态库导入库
+- `dist/libilanzou-windows-amd64.h`：对应头文件
+- `dist/libilanzou-windows-amd64.def`：导出符号定义
+
 C 接口采用 session handle。`IlanzouNew` 创建 handle，`IlanzouInit` 登录；列表、创建目录、上传等操作返回 JSON 字符串。下载写入指定本地路径。操作函数返回 `0` 表示成功，非 `0` 表示失败；错误文本和 JSON 字符串由库分配，调用方必须通过 `IlanzouFreeString` 释放，完成后通过 `IlanzouClose` 关闭 handle。创建 handle 时传入非空根目录 ID 会启用与 CLI 相同的目录范围限制；传空字符串或 `"0"` 表示账号根目录。请求超时参数单位为毫秒，传 `0` 使用默认 10 分钟。移动、重命名、删除函数中的 `isDir` 传 `0` 表示文件，非 `0` 表示目录。
 
 从源码重新生成 Linux 库：
@@ -105,6 +113,14 @@ CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -buildmode=c-archive -o dist/l
 
 两条命令都会生成匹配的 `.h` 头文件。
 
+使用 Windows amd64 MinGW 工具链构建：
+
+```sh
+GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc go build -trimpath -ldflags='-s -w' -buildmode=c-shared -o dist/libilanzou-windows-amd64.dll ./cmd/ilanzouffi
+GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc go build -trimpath -ldflags='-s -w' -buildmode=c-archive -o dist/libilanzou-windows-amd64.a ./cmd/ilanzouffi
+x86_64-w64-mingw32-dlltool -d dist/libilanzou-windows-amd64.def -D libilanzou-windows-amd64.dll -l dist/libilanzou-windows-amd64.dll.a
+```
+
 构建 C/C++ 程序的示例：
 
 ```sh
@@ -113,6 +129,12 @@ gcc app.c -Idist -Ldist -lilanzou-linux-amd64 -Wl,-rpath,'$ORIGIN' -o app
 
 # 静态链接
 gcc app.c dist/libilanzou-linux-amd64.a -pthread -ldl -lm -o app
+
+# Windows MinGW 动态链接（把 DLL 放在 app.exe 同目录或 PATH 中）
+x86_64-w64-mingw32-gcc app.c -Idist -Ldist -lilanzou-windows-amd64 -o app.exe
+
+# Windows MinGW 静态链接
+x86_64-w64-mingw32-gcc app.c dist/libilanzou-windows-amd64.a -o app.exe
 ```
 
 最小 C 调用示例：
@@ -143,7 +165,7 @@ int main(void) {
 }
 ```
 
-这些库以 Linux amd64 和当前 Go/cgo 工具链构建。生成 Windows DLL 或静态库需要 Windows amd64 的 cgo 交叉编译器（例如 MinGW）；本次构建环境没有该工具链，因此未生成 Windows 库。
+Windows 动态链接程序运行时需能找到对应 `.dll`；MinGW 链接时使用 `.dll.a` 导入库。Windows 静态库 `.a` 直接参与最终程序链接。
 
 作为 Go 包使用时，创建 `ilanzou.NewClient(username, password)`，可选调用 `SetIP(ip)` 设置 `X-Forwarded-For`，再调用 `Init(ctx)`。需要根目录隔离时，用 `ilanzou.NewScopedClient(client, rootFolderID)` 执行文件操作；底层 `Client` 本身不限制目录范围。`Download` 返回的 reader 需要由调用者关闭。
 

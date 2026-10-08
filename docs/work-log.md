@@ -132,3 +132,12 @@
 - 现有 Linux 与 Windows CLI 均已重编，以使用提取到 Go 公共库的根目录范围实现。
 - 当前环境没有 Windows amd64 cgo 交叉编译器（MinGW），因此未构建 Windows DLL/静态库；原 Linux/Windows CLI 文件仍是独立交付物。
 - README 增加 Go/C 接口、库文件用法和构建说明。未运行网盘远端操作或功能测试。
+
+## Windows C 库核对与补充（2026-10-08）
+
+- 用户提供 MinGW 交叉编译器及 Windows DLL/头文件后，核对 `dist/libilanzou-windows-amd64.dll` 为 PE32+ x86-64；Go build info 显示 `GOOS=windows`、`GOARCH=amd64`、`-buildmode=c-shared`、Git revision `5979c2924cf795fbfc2734fd58d6b77dafd022d1`，且构建时工作树干净。
+- DLL 导出 11 个公开 `Ilanzou*` C ABI 函数；外部 DLL 依赖为 `KERNEL32.dll` 和 `msvcrt.dll`。头文件与使用当前源码生成的 Windows 头文件 SHA-256 相同：`189b3bdb37c026f3f58ce0875a94f6ab88df6b040cd48a44d6a5fdda9bd7e3bf`。
+- 当前工作树复构建 DLL 的哈希与用户 DLL 不同，因为复构建工作树含未跟踪产物并带有 `vcs.modified=true`；复构建头文件完全一致，导出接口一致。
+- 用 MinGW 成功构建 Windows C 静态库 `dist/libilanzou-windows-amd64.a`，并从现有 DLL 的公开导出生成 MinGW 导入库 `dist/libilanzou-windows-amd64.dll.a`；`dist/libilanzou-windows-amd64.def` 保存对应导出名。
+- 使用最小 C 客户端分别通过静态库和 DLL 导入库成功链接为 Windows amd64 EXE；未执行这些 EXE，也未执行网盘操作。
+- README 已补充 Windows DLL、静态库、导入库与构建命令。未执行网盘远端操作或功能测试。

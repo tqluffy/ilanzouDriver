@@ -206,3 +206,9 @@
 
 - 所有 WebDAV 方法现在要求 HTTP Basic Auth，凭据直接复用生效配置中的 iLanZou `username` 和 `password`；缺少或错误凭据返回 401 和 Basic challenge。
 - 增加本地验证：无凭据和错误密码均被拒绝，正确凭据可读取根目录 PROPFIND。未进行额外远端网盘操作。
+
+## Zotero WebDAV 测试文件（2026-10-08）
+
+- 使用 `dist/ilanzou-webdav.toml` 和 Basic Auth，在配置根目录 ID `347497588` 下的 `/dav/zotero` 做实测；监听覆盖为 `127.0.0.1:8080`。
+- 对指定的 `zotero-test-file.prop` 完成 1 字节创建、相同内容重复 PUT、改写为另一字节、GET 内容校验和 DELETE 后确认不存在。未认证 OPTIONS 返回 401。
+- 测试文件已清理，测试服务已停止。修复 PUT 覆盖时新旧 ID 相同会误删秒传文件的问题；现有 ID 相同则保留文件，内容变化且生成新 ID 时才删除旧对象。

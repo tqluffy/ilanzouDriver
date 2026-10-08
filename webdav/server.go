@@ -321,9 +321,11 @@ func (handler *Handler) put(response http.ResponseWriter, request *http.Request)
 	}
 	status := http.StatusCreated
 	if existing != nil {
-		if err := handler.client.Remove(request.Context(), existing.ID, false); err != nil {
-			writeError(response, err)
-			return
+		if entry.ID != existing.ID {
+			if err := handler.client.Remove(request.Context(), existing.ID, false); err != nil {
+				writeError(response, err)
+				return
+			}
 		}
 		status = http.StatusNoContent
 	}

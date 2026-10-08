@@ -109,6 +109,8 @@ cp ilanzou-webdav.toml.example dist/ilanzou-webdav.toml
 
 WebDAV URL 使用文件和目录名，例如 `http://127.0.0.1:8080/path/to/file-or-folder`。服务把每个路径段映射到 iLanZou 目录项，再以 ID 调用现有客户端；路径根映射到 `root_folder_id`，受该根目录范围约束。支持 `PROPFIND`、`GET`、`HEAD`、`PUT`、`MKCOL`、`DELETE`、`MOVE` 和 `COPY`。每个 WebDAV 请求都要求 HTTP Basic Auth，用户名和密码复用配置中的 iLanZou 账号密码。当前服务使用 HTTP；跨不可信网络访问时应通过 HTTPS 反向代理提供加密连接。后台日志写入配置文件同目录的 `ilanzou-webdav.log`，PID 文件为 `ilanzou-webdav.pid`。
 
+Zotero 连接检查可在 `/dav/zotero` 创建 `zotero-test-file.prop`。服务支持 1 字节文件的创建、同内容重复 PUT、内容覆盖和删除；iLanZou 对相同内容返回已有 ID 时，覆盖流程会保留该文件。
+
 WebDAV 配置项及命令行覆盖：
 
 | TOML 键 | 环境变量 | 命令行参数 | 默认值 |

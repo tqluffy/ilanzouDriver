@@ -201,3 +201,8 @@
 - 使用 `dist/ilanzou-webdav.toml`，根目录 ID 为 `347497588`；仅将监听地址覆盖为 `127.0.0.1:8080`，未改变配置中的账号或目录范围。
 - 实测 MKCOL、PUT、PROPFIND、GET、MOVE 和 COPY；下载及复制后的文件内容均与上传内容一致。测试用随机目录及其中对象已清理，测试服务已停止。
 - 小文件的 iLanZou 列目录元数据按 KiB 返回近似大小。服务不再把该值作为 HTTP `Content-Length` 或 DAV `getcontentlength` 返回，避免客户端因长度偏大而截断读取。
+
+## WebDAV 认证（2026-10-08）
+
+- 所有 WebDAV 方法现在要求 HTTP Basic Auth，凭据直接复用生效配置中的 iLanZou `username` 和 `password`；缺少或错误凭据返回 401 和 Basic challenge。
+- 增加本地验证：无凭据和错误密码均被拒绝，正确凭据可读取根目录 PROPFIND。未进行额外远端网盘操作。

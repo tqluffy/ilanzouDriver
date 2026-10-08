@@ -2,6 +2,7 @@ package webdav
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -24,6 +25,8 @@ var (
 
 type Handler struct {
 	client        *ilanzou.ScopedClient
+	username      string
+	password      string
 	uploadSlots   chan struct{}
 	downloadSlots chan struct{}
 }
@@ -34,15 +37,23 @@ type resolvedPath struct {
 	path     string
 }
 
-func NewHandler(client *ilanzou.ScopedClient, uploadConcurrency, downloadConcurrency int) http.Handler {
+func NewHandler(client *ilanzou.ScopedClient, username, password string, uploadConcurrency, downloadConcurrency int) http.Handler {
 	return &Handler{
 		client:        client,
+		username:      username,
+		password:      password,
 		uploadSlots:   make(chan struct{}, uploadConcurrency),
 		downloadSlots: make(chan struct{}, downloadConcurrency),
 	}
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	username, password, ok := request.BasicAuth()
+	if !ok || subtle.ConstantTimeCompare([]byte(username), []byte(handler.username)) != 1 || subtle.ConstantTimeCompare([]byte(password), []byte(handler.password)) != 1 {
+		response.Header().Set("WWW-Authenticate", `Basic realm="iLanZou WebDAV", charset="UTF-8"`)
+		http.Error(response, "authentication required", http.StatusUnauthorized)
+		return
+	}
 	switch request.Method {
 	case http.MethodOptions:
 		response.Header().Set("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, PROPFIND, MOVE, COPY")

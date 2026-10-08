@@ -139,6 +139,8 @@ func serveWebDAV(config settings) error {
 	server := &http.Server{
 		Handler: webdav.NewHandler(
 			ilanzou.NewScopedClient(client, config.rootFolderID),
+			config.username,
+			config.password,
 			config.uploadConcurrency,
 			config.downloadConcurrency,
 		),

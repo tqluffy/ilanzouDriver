@@ -1,0 +1,13 @@
+username = ""
+password = ""
+ip = ""
+
+# WebDAV 监听地址。默认仅监听本机；需要局域网访问时可设为 "0.0.0.0:8080"。
+listen = "127.0.0.1:8080"
+
+# "0" 表示账号根目录。设置其他 ID 后，只暴露此目录及其子目录。
+root_folder_id = "0"
+
+upload_concurrency = 4
+download_concurrency = 32
+request_timeout = "10m"

@@ -1,6 +1,6 @@
 # iLanZou 最小驱动
 
-从 Alist 的 `drivers/ilanzou` 抽取出的独立 Go 客户端。只保留 iLanZou 登录、目录和文件操作，以及文件数据经七牛云上传/下载的链路；不包含 Alist 的存储注册、数据库、WebDAV、缓存、任务队列、后台服务或其他网盘驱动。
+从 Alist 的 `drivers/ilanzou` 抽取出的独立 Go 客户端，并提供可运行的 WebDAV 服务。保留 iLanZou 登录、目录和文件操作，以及文件数据经七牛云上传/下载的链路。
 
 ## 原仓库链路梳理
 
@@ -23,14 +23,17 @@ iLanZou API 对查询参数顺序敏感；本实现的登录、普通 API 和下
 
 ```sh
 go build -o ilanzou ./cmd/ilanzou
+go build -o ilanzou-webdav ./cmd/ilanzou
 ```
 
 仓库同时提供无需 Go 环境即可运行的单文件可执行程序：
 
 - Linux x86-64：`dist/ilanzou-linux-amd64`
 - Windows x86-64：`dist/ilanzou-windows-amd64.exe`
+- Linux x86-64 WebDAV 服务：`dist/ilanzou-webdav-linux-amd64`
+- Windows x86-64 WebDAV 服务：`dist/ilanzou-webdav-windows-amd64.exe`
 
-两种版本均以纯 Go 方式构建，运行时不依赖外部库。查看完整帮助：
+这些版本均以纯 Go 方式构建，运行时不依赖外部库。查看完整帮助：
 
 ```sh
 ./dist/ilanzou-linux-amd64 -h
@@ -92,6 +95,40 @@ ILANZOU_USERNAME='你的账号' ILANZOU_PASSWORD='你的密码' ./ilanzou --no-c
 多文件上传和下载使用 Go worker 并行处理，分别受 `upload_concurrency`（默认 4）和 `download_concurrency`（默认 32）限制。并发数限制的是同时传输的文件任务；单个大文件仍按当前七牛分片流程传输。上传可省略目录 ID 以使用配置根目录；显式目标目录 ID 必须是数字 ID 并位于配置根目录内。下载参数按“文件 ID、本地路径”成对重复传入。多文件命令会输出含逐项状态的 JSON。
 
 `move`、`rename` 和 `delete` 的类型参数可用 `file` 或 `dir`。删除为远端永久删除操作。程序输出 JSON 列表或新建/上传对象信息，包含可用于后续文件操作的 ID。
+
+## WebDAV 服务
+
+复制 `ilanzou-webdav.toml.example` 为 `ilanzou-webdav.toml`，填写 iLanZou 账号后启动。默认配置文件在可执行文件同级目录，服务默认监听 `127.0.0.1:8080`：
+
+```sh
+cp ilanzou-webdav.toml.example dist/ilanzou-webdav.toml
+# 编辑配置后启动，命令返回时服务已在后台监听
+./dist/ilanzou-webdav-linux-amd64 start
+./dist/ilanzou-webdav-linux-amd64 stop
+```
+
+WebDAV URL 使用文件和目录名，例如 `http://127.0.0.1:8080/path/to/file-or-folder`。服务把每个路径段映射到 iLanZou 目录项，再以 ID 调用现有客户端；路径根映射到 `root_folder_id`，受该根目录范围约束。支持 `PROPFIND`、`GET`、`HEAD`、`PUT`、`MKCOL`、`DELETE`、`MOVE` 和 `COPY`。后台日志写入配置文件同目录的 `ilanzou-webdav.log`，PID 文件为 `ilanzou-webdav.pid`。
+
+WebDAV 配置项及命令行覆盖：
+
+| TOML 键 | 环境变量 | 命令行参数 | 默认值 |
+|---|---|---|---|
+| `username` | `ILANZOU_USERNAME` | `--username` | 空 |
+| `password` | `ILANZOU_PASSWORD` | `--password` | 空 |
+| `ip` | `ILANZOU_IP` | `--ip` | 空 |
+| `listen` | `ILANZOU_WEBDAV_LISTEN` | `--listen` | `127.0.0.1:8080` |
+| `root_folder_id` | `ILANZOU_ROOT_FOLDER_ID` | `--root-folder-id` | `"0"` |
+| `upload_concurrency` | `ILANZOU_UPLOAD_CONCURRENCY` | `--upload-concurrency` | `4` |
+| `download_concurrency` | `ILANZOU_DOWNLOAD_CONCURRENCY` | `--download-concurrency` | `32` |
+| `request_timeout` | `ILANZOU_REQUEST_TIMEOUT` | `--request-timeout` | `"10m"` |
+
+优先级为命令行参数 > 环境变量 > `ilanzou-webdav.toml` > 内置默认值。命令行选项可放在 `start` 前后，例如：
+
+```sh
+./dist/ilanzou-webdav-linux-amd64 --config ./webdav.toml --listen 0.0.0.0:8080 start
+```
+
+Windows 可执行文件使用方式相同；`start` 会启动独立后台进程，`stop` 读取同目录 PID 文件并停止服务。
 
 ## 作为库引入
 

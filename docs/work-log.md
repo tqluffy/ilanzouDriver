@@ -188,3 +188,10 @@
 - 修复分支 `fix/ilanzou-upload-token` 已快进合并至 `master`；主分支当前 HEAD 为 `eddb74e Record concurrent upload and download checks`。
 - 修复提交为 `dbde940 Fix iLanZou upload token handling`，端到端验证记录为 `417ff72`，并发复测记录为 `eddb74e`。
 - 合并前工作区干净；本轮并发样本已清理，测试操作仍限定在目录 ID `404038274`。旧测试前缀没有在本轮触碰或重新核查。
+
+## WebDAV 服务（2026-10-08）
+
+- 在现有 CLI 上增加 `start`、`stop` 和前台 `serve` 子命令；`start` 以独立进程运行，等待登录和监听成功后返回。日志和 PID 文件放在配置文件同目录。
+- 新增 `ilanzou-webdav.toml` 配置读取，命令行参数优先于环境变量和 TOML。默认 WebDAV 监听 `127.0.0.1:8080`。
+- 新增 WebDAV 路径适配，按目录名逐段列目录并映射到底层对象 ID；使用 `ScopedClient` 限定配置根目录。支持 PROPFIND、GET、HEAD、PUT、MKCOL、DELETE、MOVE 和 COPY。
+- 已运行 `go test ./...`、Windows amd64 交叉编译、Linux/Windows CLI 构建及命令帮助/缺省账号提示检查。未进行 iLanZou 远端写入验证。

@@ -48,9 +48,19 @@ func run(args []string) error {
 		}
 		return commandUsage(commandArgs[0])
 	}
-	config, err := resolveSettings(options)
+	if command == "stop" {
+		return stopWebDAV(configPathFor(options, "ilanzou-webdav.toml"))
+	}
+	defaultConfigName := "ilanzou.toml"
+	if command == "start" || command == "serve" {
+		defaultConfigName = "ilanzou-webdav.toml"
+	}
+	config, err := resolveSettings(options, defaultConfigName)
 	if err != nil {
 		return err
+	}
+	if command == "start" || command == "serve" {
+		return runWebDAVCommand(command, options, config)
 	}
 	if config.username == "" || config.password == "" {
 		if options.noConfig {
@@ -320,8 +330,9 @@ func usage() {
   ilanzou <命令> -h
   ilanzou help [命令]
 
-配置优先级：命令行参数 > 环境变量 > ilanzou.toml > 默认值
-  ilanzou.toml 默认在可执行文件同级目录；也可用 -c/--config 指定。
+	配置优先级：命令行参数 > 环境变量 > ilanzou.toml > 默认值
+	ilanzou.toml 默认在可执行文件同级目录；也可用 -c/--config 指定。
+	WebDAV 的 start/serve 使用同目录的 ilanzou-webdav.toml。
   缺省配置文件可以不存在。示例配置见 ilanzou.toml.example。
   --no-config 强制跳过所有 TOML 文件；仅使用命令行、环境变量和内置默认值。
   --no-config 时账号和密码必填，缺失或参数无效会显示对应提示。
@@ -334,12 +345,15 @@ func usage() {
   upload_concurrency   ILANZOU_UPLOAD_CONCURRENCY   --upload-concurrency
   download_concurrency ILANZOU_DOWNLOAD_CONCURRENCY --download-concurrency
   request_timeout      ILANZOU_REQUEST_TIMEOUT      --request-timeout
+  listen               ILANZOU_WEBDAV_LISTEN        --listen (WebDAV)
   密码作为命令行参数会出现在 shell 历史和进程参数中，建议使用 TOML 或环境变量。
 
 默认值：root_folder_id="0"，上传并发数为 4、下载并发数为 32，request_timeout="10m"。
 设置非 0 根目录后，所有网盘文件操作只允许访问该目录及其子目录；该根目录本身不能移动、重命名或删除。
 
 命令：
+  start                                  启动 WebDAV 服务并在后台运行
+  stop                                   停止后台 WebDAV 服务
   ls [目录ID]                           列出目录，省略时列出配置根目录
   mkdir [父目录ID] <目录名>               新建目录，省略父目录时使用配置根目录
   upload [目录ID] <本地文件> [本地文件...] 上传一个或多个文件
@@ -387,6 +401,7 @@ func usage() {
       --upload-concurrency N   最大并发上传数
       --download-concurrency N 最大并发下载数
       --request-timeout DURATION 每个 HTTP 请求超时，如 30s、10m
+      --listen VALUE      WebDAV 监听地址，如 127.0.0.1:8080
   -h, --help              显示帮助；不需要登录
 `)
 }
@@ -464,6 +479,22 @@ func commandUsage(command string) error {
 示例：
   ilanzou delete file 123456789
   ilanzou delete dir 348006267
+`
+	case "start":
+		help = `用法：ilanzou-webdav start [选项]
+
+读取 ilanzou-webdav.toml 并在后台启动 WebDAV 服务。
+服务地址由 listen 配置项设置，默认 127.0.0.1:8080。
+
+示例：
+  ./ilanzou-webdav start
+  ./ilanzou-webdav --config ./webdav.toml --listen 0.0.0.0:8080 start
+  ./ilanzou-webdav stop
+`
+	case "stop":
+		help = `用法：ilanzou-webdav stop [-c 配置文件]
+
+停止 start 启动的后台 WebDAV 服务。
 `
 	default:
 		return fmt.Errorf("未知命令 %q；运行 ilanzou -h 查看命令列表", command)

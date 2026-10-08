@@ -17,9 +17,11 @@ type settings struct {
 	password            string
 	ip                  string
 	rootFolderID        string
+	listen              string
 	uploadConcurrency   int
 	downloadConcurrency int
 	requestTimeout      time.Duration
+	configPath          string
 }
 
 type fileSettings struct {
@@ -27,6 +29,7 @@ type fileSettings struct {
 	Password            string `toml:"password"`
 	IP                  string `toml:"ip"`
 	RootFolderID        string `toml:"root_folder_id"`
+	Listen              string `toml:"listen"`
 	UploadConcurrency   int    `toml:"upload_concurrency"`
 	DownloadConcurrency int    `toml:"download_concurrency"`
 	RequestTimeout      string `toml:"request_timeout"`
@@ -45,6 +48,7 @@ var configEnvironment = map[string]string{
 	"password":             "ILANZOU_PASSWORD",
 	"ip":                   "ILANZOU_IP",
 	"root_folder_id":       "ILANZOU_ROOT_FOLDER_ID",
+	"listen":               "ILANZOU_WEBDAV_LISTEN",
 	"upload_concurrency":   "ILANZOU_UPLOAD_CONCURRENCY",
 	"download_concurrency": "ILANZOU_DOWNLOAD_CONCURRENCY",
 	"request_timeout":      "ILANZOU_REQUEST_TIMEOUT",
@@ -55,6 +59,7 @@ var commandLineConfigKeys = map[string]string{
 	"--password":             "password",
 	"--ip":                   "ip",
 	"--root-folder-id":       "root_folder_id",
+	"--listen":               "listen",
 	"--upload-concurrency":   "upload_concurrency",
 	"--download-concurrency": "download_concurrency",
 	"--request-timeout":      "request_timeout",
@@ -129,25 +134,19 @@ func stringsCutOption(value string) (string, string, bool) {
 	return value, "", false
 }
 
-func resolveSettings(options globalOptions) (settings, error) {
+func resolveSettings(options globalOptions, defaultConfigName string) (settings, error) {
+	configPath := configPathFor(options, defaultConfigName)
 	values := map[string]string{
 		"username":             "",
 		"password":             "",
 		"ip":                   "",
 		"root_folder_id":       "0",
+		"listen":               "127.0.0.1:8080",
 		"upload_concurrency":   "4",
 		"download_concurrency": "32",
 		"request_timeout":      "10m",
 	}
 	if !options.noConfig {
-		configPath := options.configPath
-		if !options.configSpecified {
-			executable, err := os.Executable()
-			if err != nil {
-				return settings{}, err
-			}
-			configPath = filepath.Join(filepath.Dir(executable), "ilanzou.toml")
-		}
 		file, err := os.Open(configPath)
 		if err == nil {
 			var configured fileSettings
@@ -171,6 +170,7 @@ func resolveSettings(options globalOptions) (settings, error) {
 			setTomlValue("password", configured.Password)
 			setTomlValue("ip", configured.IP)
 			setTomlValue("root_folder_id", configured.RootFolderID)
+			setTomlValue("listen", configured.Listen)
 			if metadata.IsDefined("upload_concurrency") {
 				values["upload_concurrency"] = strconv.Itoa(configured.UploadConcurrency)
 			}
@@ -187,7 +187,12 @@ func resolveSettings(options globalOptions) (settings, error) {
 			values[key] = value
 		}
 	}
-	return applyOverrides(values, options.values)
+	resolved, err := applyOverrides(values, options.values)
+	if err != nil {
+		return settings{}, err
+	}
+	resolved.configPath = configPath
+	return resolved, nil
 }
 
 func applyOverrides(values, commandLine map[string]string) (settings, error) {
@@ -214,8 +219,20 @@ func applyOverrides(values, commandLine map[string]string) (settings, error) {
 		password:            values["password"],
 		ip:                  values["ip"],
 		rootFolderID:        values["root_folder_id"],
+		listen:              values["listen"],
 		uploadConcurrency:   uploadConcurrency,
 		downloadConcurrency: downloadConcurrency,
 		requestTimeout:      requestTimeout,
 	}, nil
+}
+
+func configPathFor(options globalOptions, defaultConfigName string) string {
+	if options.configSpecified {
+		return options.configPath
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return defaultConfigName
+	}
+	return filepath.Join(filepath.Dir(executable), defaultConfigName)
 }

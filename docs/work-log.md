@@ -71,6 +71,9 @@
 ## Git 状态
 
 - 查询参数顺序修复提交：`9d4d9fe Preserve iLanZou API query parameter order`
+- XFF 配置支持提交：`c61f35d Add upstream iLanZou IP forwarding support`
+- Resty 小文件上传行为对齐提交：`262cf13 Match upstream iLanZou upload request behavior`
+- 文件操作尺寸矩阵日志提交：`f8dcce8 Record file operation test results`
 - 首次工作日志提交：`728e1a8 Document iLanZou implementation status`
 - 提交身份：`tqluffy <tqluffy@qq.com>`
-- 查询参数顺序修复提交包含 README 更新及重新构建的 Linux/Windows CLI。
+- 最近的 Resty 对齐提交包含重新构建的 Linux/Windows CLI。

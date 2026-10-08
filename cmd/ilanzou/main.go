@@ -358,7 +358,7 @@ func usage() {
   request_timeout      ILANZOU_REQUEST_TIMEOUT      --request-timeout
   密码作为命令行参数会出现在 shell 历史和进程参数中，建议使用 TOML 或环境变量。
 
-默认值：root_folder_id="0"，上传/下载并发数均为 4，request_timeout="10m"。
+默认值：root_folder_id="0"，上传并发数为 4、下载并发数为 32，request_timeout="10m"。
 设置非 0 根目录后，所有网盘文件操作只允许访问该目录及其子目录；该根目录本身不能移动、重命名或删除。
 
 命令：

@@ -117,3 +117,9 @@
 - 默认根目录为 `0`，上传/下载并发上限均为 4，请求超时为 10 分钟。非 0 根目录启用后，CLI 在执行列表、新建、上传、下载、移动、重命名和删除前，仅从该根目录向下查找和校验目标；根目录本身不可移动、重命名或删除。
 - `upload` 支持多个本地文件并按上传并发上限执行；`download` 支持多个文件 ID/路径对并按下载并发上限执行。文件级并发通过 Go worker 并行处理。上传对象 key 的时间片段改为进程内原子递增，避免同一进程中的并发上传生成相同 key。
 - TOML 使用 `BurntSushi/toml` v1.6.0 解析。已重新构建 `dist/ilanzou-linux-amd64` 和 `dist/ilanzou-windows-amd64.exe`；Linux CLI 的完整 `-h` 和 `upload -h` 输出已核对。未运行网盘远端操作或功能测试。
+
+## 默认下载并发调整（2026-10-08）
+
+- 按用户要求，将未设置 `download_concurrency` 时的默认值从 4 调整为 32；上传并发默认值仍为 4，账号根目录和请求超时默认值保持不变。
+- 同步更新 `cmd/ilanzou/config.go` 的运行时默认值、CLI `-h` 帮助、README 参数表和 `ilanzou.toml.example`。
+- 重新构建 Linux 与 Windows CLI；核对 Linux `-h` 中显示下载默认并发为 32。未执行网盘远端操作或功能测试。

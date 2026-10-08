@@ -140,7 +140,7 @@ func resolveSettings(options globalOptions) (settings, error) {
 		"ip":                   "",
 		"root_folder_id":       "0",
 		"upload_concurrency":   "4",
-		"download_concurrency": "4",
+		"download_concurrency": "32",
 		"request_timeout":      "10m",
 	}
 	file, err := os.Open(configPath)

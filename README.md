@@ -73,14 +73,14 @@ cp ilanzou.toml.example ilanzou.toml
 | `ip` | `ILANZOU_IP` | `--ip` | 空 |
 | `root_folder_id` | `ILANZOU_ROOT_FOLDER_ID` | `--root-folder-id` | `"0"` |
 | `upload_concurrency` | `ILANZOU_UPLOAD_CONCURRENCY` | `--upload-concurrency` | `4` |
-| `download_concurrency` | `ILANZOU_DOWNLOAD_CONCURRENCY` | `--download-concurrency` | `4` |
+| `download_concurrency` | `ILANZOU_DOWNLOAD_CONCURRENCY` | `--download-concurrency` | `32` |
 | `request_timeout` | `ILANZOU_REQUEST_TIMEOUT` | `--request-timeout` | `"10m"` |
 
 `-c/--config` 可在命令前或命令后指定配置文件路径；默认查找可执行文件同级的 `ilanzou.toml`。密码可以放在命令行参数中，但 shell 历史和进程参数可能会记录它，建议使用配置文件或环境变量。
 
 `root_folder_id` 默认为账号根目录 `"0"`。设置为其他目录 ID 后，`ls`、新建、上传、下载、移动、重命名和删除都会限定在该目录及其子目录内；上级和同级目录中的对象会被拒绝。配置根目录本身不可移动、重命名或删除。CLI 会从配置根目录向下查找对象归属后再执行操作。
 
-多文件上传和下载使用 Go worker 并行处理，分别受 `upload_concurrency` 和 `download_concurrency` 限制。并发数限制的是同时传输的文件任务；单个大文件仍按当前七牛分片流程传输。上传可省略目录 ID 以使用配置根目录；显式目标目录 ID 必须是数字 ID 并位于配置根目录内。下载参数按“文件 ID、本地路径”成对重复传入。多文件命令会输出含逐项状态的 JSON。
+多文件上传和下载使用 Go worker 并行处理，分别受 `upload_concurrency`（默认 4）和 `download_concurrency`（默认 32）限制。并发数限制的是同时传输的文件任务；单个大文件仍按当前七牛分片流程传输。上传可省略目录 ID 以使用配置根目录；显式目标目录 ID 必须是数字 ID 并位于配置根目录内。下载参数按“文件 ID、本地路径”成对重复传入。多文件命令会输出含逐项状态的 JSON。
 
 `move`、`rename` 和 `delete` 的类型参数可用 `file` 或 `dir`。删除为远端永久删除操作。程序输出 JSON 列表或新建/上传对象信息，包含可用于后续文件操作的 ID。
 

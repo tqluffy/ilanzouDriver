@@ -12,7 +12,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"ilanzou"
@@ -206,7 +205,6 @@ func writePropResponse(response io.Writer, item resolvedPath) {
 		_, _ = io.WriteString(response, `<D:resourcetype><D:collection/></D:resourcetype>`)
 	} else {
 		_, _ = io.WriteString(response, `<D:resourcetype/>`)
-		_, _ = fmt.Fprintf(response, `<D:getcontentlength>%d</D:getcontentlength>`, item.entry.Size)
 		contentType := "application/octet-stream"
 		if detected := mimeType(item.entry.Name); detected != "" {
 			contentType = detected
@@ -258,9 +256,6 @@ func (handler *Handler) get(response http.ResponseWriter, request *http.Request)
 	if item.entry.IsDir {
 		http.Error(response, "cannot read a collection", http.StatusMethodNotAllowed)
 		return
-	}
-	if item.entry.Size >= 0 {
-		response.Header().Set("Content-Length", strconv.FormatInt(item.entry.Size, 10))
 	}
 	if !item.entry.Modified.IsZero() {
 		response.Header().Set("Last-Modified", item.entry.Modified.UTC().Format(http.TimeFormat))

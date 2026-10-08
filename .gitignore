@@ -3,3 +3,7 @@
 *.test
 *.out
 ilanzou.toml
+ilanzou-webdav.toml
+ilanzou-webdav.log
+ilanzou-webdav.pid
+ilanzou-webdav.ready

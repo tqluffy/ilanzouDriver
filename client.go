@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -525,21 +526,7 @@ func (c *Client) api(ctx context.Context, path, method string, proved bool, quer
 	c.mu.Lock()
 	uuid, token := c.uuid, c.token
 	c.mu.Unlock()
-	if query == nil {
-		query = url.Values{}
-	}
 	timestamp := time.Now().UnixMilli()
-	query.Set("uuid", uuid)
-	query.Set("devType", "6")
-	query.Set("devCode", uuid)
-	query.Set("devModel", "chrome")
-	query.Set("devVersion", "125")
-	query.Set("appVersion", "")
-	query.Set("timestamp", encryptHex(strconv.FormatInt(timestamp, 10)))
-	query.Set("extra", "2")
-	if proved {
-		query.Set("appToken", token)
-	}
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -548,7 +535,8 @@ func (c *Client) api(ctx context.Context, path, method string, proved bool, quer
 		}
 		body = bytes.NewReader(encoded)
 	}
-	request, err := http.NewRequestWithContext(ctx, method, apiBase+path+"?"+query.Encode(), body)
+	requestURL := apiBase + path + "?" + orderedAPIQuery(uuid, token, proved, timestamp, query)
+	request, err := http.NewRequestWithContext(ctx, method, requestURL, body)
 	if err != nil {
 		return nil, err
 	}
@@ -595,16 +583,9 @@ func (c *Client) login(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	query := url.Values{}
-	query.Set("uuid", c.uuid)
-	query.Set("devType", "6")
-	query.Set("devCode", c.uuid)
-	query.Set("devModel", "chrome")
-	query.Set("devVersion", "125")
-	query.Set("appVersion", "")
-	query.Set("timestamp", encryptHex(strconv.FormatInt(time.Now().UnixMilli(), 10)))
-	query.Set("extra", "2")
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase+"/unproved/login?"+query.Encode(), bytes.NewReader(payload))
+	timestamp := time.Now().UnixMilli()
+	query := orderedAPIQuery(c.uuid, "", false, timestamp, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase+"/unproved/login?"+query, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -641,9 +622,10 @@ func (c *Client) login(ctx context.Context) error {
 }
 
 func setWebHeaders(request *http.Request) {
+	request.Header.Set("Accept", "application/json, text/plain, */*")
 	request.Header.Set("Referer", siteBase+"/")
 	request.Header.Set("User-Agent", userAgent)
-	request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,mt;q=0.5")
 }
 
 func encryptHex(plain string) string {
@@ -654,6 +636,49 @@ func encryptHex(plain string) string {
 		block.Encrypt(data[offset:offset+block.BlockSize()], data[offset:offset+block.BlockSize()])
 	}
 	return hex.EncodeToString(data)
+}
+
+func orderedAPIQuery(uuid, token string, proved bool, timestamp int64, extra url.Values) string {
+	params := []string{
+		"uuid=" + url.QueryEscape(uuid),
+		"devType=6",
+		"devCode=" + url.QueryEscape(uuid),
+		"devModel=chrome",
+		"devVersion=125",
+		"appVersion=",
+		"timestamp=" + encryptHex(strconv.FormatInt(timestamp, 10)),
+	}
+	if proved {
+		params = append(params, "appToken="+url.QueryEscape(token))
+	}
+	params = append(params, "extra=2")
+	if len(extra) == 0 {
+		return strings.Join(params, "&")
+	}
+	orderedKeys := []string{"offset", "limit", "folderId", "type", "tokenList", "tokenTime"}
+	seen := make(map[string]bool, len(extra))
+	appendValues := func(key string) {
+		for _, value := range extra[key] {
+			params = append(params, url.QueryEscape(key)+"="+url.QueryEscape(value))
+		}
+		seen[key] = true
+	}
+	for _, key := range orderedKeys {
+		if _, ok := extra[key]; ok {
+			appendValues(key)
+		}
+	}
+	keys := make([]string, 0, len(extra))
+	for key := range extra {
+		if !seen[key] {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		appendValues(key)
+	}
+	return strings.Join(params, "&")
 }
 
 func singleUploadBody(token, key, name string, file io.Reader, size int64) (io.Reader, string, int64, error) {

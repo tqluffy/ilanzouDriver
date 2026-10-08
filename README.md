@@ -10,10 +10,12 @@ Alist 入口在 `drivers/ilanzou/driver.go`，签名和登录请求在 `util.go`
 2. 账号登录：`POST /unproved/login`，提交用户名和密码，取得 `appToken`；随后 `GET /proved/user/account/map` 获取 `userId` 和七牛对象 key 所需的 account。鉴权参数包含 UUID、设备信息、时间戳和 AES 加密后的时间戳。凭据和 token 只保存在运行时内存。
 3. 列目录：分页请求 `/proved/record/file/list`。iLanZou 维护文件名、文件 ID、父目录、大小和时间等元数据。
 4. 上传：先以 MD5、文件名、大小和目录 ID 请求 `/proved/7n/getUpToken`；再将文件数据直接上传到七牛 `upload.qiniup.com`。不超过 8 MiB 使用 multipart form，较大文件按 8 MiB 分片并提交分片 ETag。上传完成后以 `/unproved/7n/results` 将七牛 token 交回 iLanZou，由 iLanZou 创建文件记录。
-5. 下载：通过 `/unproved/file/redirect` 传入文件 ID、用户 ID 和签名，取得七牛/文件 CDN 的重定向地址，再从该地址读取文件内容。请求参数按原驱动的固定顺序拼接，符合接口的参数解析要求。
+5. 下载：通过 `/unproved/file/redirect` 传入文件 ID、用户 ID 和签名，取得七牛/文件 CDN 的重定向地址，再从该地址读取文件内容。
 6. 编辑：目录创建、文件/目录重命名、移动和删除均走 iLanZou API；文件内容不经过这些操作。删除使用原驱动的 `status: 0` 行为。
 
 签名所需 AES 与 Alist 所引用的 `mopan-sdk-go` 实现一致：AES-ECB、PKCS7 填充，输出十六进制。此项目用标准库实现，因此构建无第三方 Go 依赖。
+
+iLanZou API 对查询参数顺序敏感；本实现的登录、普通 API 和下载请求均按上游顺序拼接参数。
 
 ## 构建
 

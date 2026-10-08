@@ -53,6 +53,9 @@ func run(args []string) error {
 		return err
 	}
 	if config.username == "" || config.password == "" {
+		if options.noConfig {
+			return errors.New("已启用 --no-config，账号和密码必须通过 ILANZOU_USERNAME/ILANZOU_PASSWORD 环境变量或 --username/--password 参数提供")
+		}
 		return errors.New("请通过 ilanzou.toml、环境变量或 --username/--password 提供账号和密码")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -320,6 +323,8 @@ func usage() {
 配置优先级：命令行参数 > 环境变量 > ilanzou.toml > 默认值
   ilanzou.toml 默认在可执行文件同级目录；也可用 -c/--config 指定。
   缺省配置文件可以不存在。示例配置见 ilanzou.toml.example。
+  --no-config 强制跳过所有 TOML 文件；仅使用命令行、环境变量和内置默认值。
+  --no-config 时账号和密码必填，缺失或参数无效会显示对应提示。
 
 配置项、环境变量和命令行参数：
   username             ILANZOU_USERNAME             --username
@@ -354,6 +359,8 @@ func usage() {
   # 编辑同级 ilanzou.toml 填入账号、密码及根目录设置
   ./ilanzou ls
   ./ilanzou -c ./ilanzou.toml ls
+  ILANZOU_USERNAME='你的账号' ILANZOU_PASSWORD='你的密码' ./ilanzou --no-config ls
+  ./ilanzou --no-config --username '你的账号' --password '你的密码' ls
   ./ilanzou mkdir backup
   ./ilanzou upload 348006267 ./报告.pdf
   ./ilanzou --upload-concurrency 4 upload ./a.bin ./b.bin
@@ -372,6 +379,7 @@ func usage() {
 
 选项：
   -c, --config PATH       配置文件路径
+      --no-config         禁止读取 ilanzou.toml 和其他 TOML 配置文件
       --username VALUE    iLanZou 账号
       --password VALUE    iLanZou 密码
       --ip VALUE          作为 X-Forwarded-For 的可选客户端 IP

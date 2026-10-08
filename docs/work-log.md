@@ -141,3 +141,10 @@
 - 用 MinGW 成功构建 Windows C 静态库 `dist/libilanzou-windows-amd64.a`，并从现有 DLL 的公开导出生成 MinGW 导入库 `dist/libilanzou-windows-amd64.dll.a`；`dist/libilanzou-windows-amd64.def` 保存对应导出名。
 - 使用最小 C 客户端分别通过静态库和 DLL 导入库成功链接为 Windows amd64 EXE；未执行这些 EXE，也未执行网盘操作。
 - README 已补充 Windows DLL、静态库、导入库与构建命令。未执行网盘远端操作或功能测试。
+
+## `--no-config` 运行模式（2026-10-08）
+
+- 新增全局参数 `--no-config`，可放在命令前后；启用后不计算默认 TOML 路径、不打开 `-c/--config` 指定路径，也不解析任何 TOML 内容。
+- 此模式仅应用命令行参数、环境变量和内置默认值；账号、密码必须由命令行或环境变量提供。其他配置仍采用内置默认值（根目录 `0`、上传并发 4、下载并发 32、请求超时 10 分钟）。
+- 参数不足时给出账号/密码来源提示；并发数、请求超时或根目录 ID 无效时提示对应参数名和环境变量名。若同时指定 `--no-config` 和 `-c/--config`，以 `--no-config` 为准并跳过配置文件。
+- 已更新完整 `-h`、README 和本工作日志，并重编 Linux/Windows CLI。使用损坏的 README TOML 路径配合 `--no-config`、缺失账号密码时，程序跳过 TOML 并显示必填提示；并发数设为 0、根目录 ID 非数字时均显示对应参数/环境变量提示。未执行网盘操作。

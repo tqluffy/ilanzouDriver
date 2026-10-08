@@ -36,6 +36,7 @@ type globalOptions struct {
 	values          map[string]string
 	configPath      string
 	configSpecified bool
+	noConfig        bool
 	help            bool
 }
 
@@ -70,6 +71,10 @@ func parseInvocation(args []string) (globalOptions, []string, error) {
 		}
 		if arg == "-h" || arg == "--help" {
 			options.help = true
+			continue
+		}
+		if arg == "--no-config" {
+			options.noConfig = true
 			continue
 		}
 		if arg == "-c" || arg == "--config" {
@@ -125,15 +130,6 @@ func stringsCutOption(value string) (string, string, bool) {
 }
 
 func resolveSettings(options globalOptions) (settings, error) {
-	configPath := options.configPath
-	if !options.configSpecified {
-		executable, err := os.Executable()
-		if err != nil {
-			return settings{}, err
-		}
-		configPath = filepath.Join(filepath.Dir(executable), "ilanzou.toml")
-	}
-
 	values := map[string]string{
 		"username":             "",
 		"password":             "",
@@ -143,38 +139,48 @@ func resolveSettings(options globalOptions) (settings, error) {
 		"download_concurrency": "32",
 		"request_timeout":      "10m",
 	}
-	file, err := os.Open(configPath)
-	if err == nil {
-		var configured fileSettings
-		metadata, decodeErr := toml.NewDecoder(file).Decode(&configured)
-		closeErr := file.Close()
-		if decodeErr != nil {
-			return settings{}, fmt.Errorf("decode config %q: %w", configPath, decodeErr)
-		}
-		if closeErr != nil {
-			return settings{}, closeErr
-		}
-		if unknown := metadata.Undecoded(); len(unknown) != 0 {
-			return settings{}, fmt.Errorf("unknown config key(s): %v", unknown)
-		}
-		setTomlValue := func(key string, value string) {
-			if metadata.IsDefined(key) {
-				values[key] = value
+	if !options.noConfig {
+		configPath := options.configPath
+		if !options.configSpecified {
+			executable, err := os.Executable()
+			if err != nil {
+				return settings{}, err
 			}
+			configPath = filepath.Join(filepath.Dir(executable), "ilanzou.toml")
 		}
-		setTomlValue("username", configured.Username)
-		setTomlValue("password", configured.Password)
-		setTomlValue("ip", configured.IP)
-		setTomlValue("root_folder_id", configured.RootFolderID)
-		if metadata.IsDefined("upload_concurrency") {
-			values["upload_concurrency"] = strconv.Itoa(configured.UploadConcurrency)
+		file, err := os.Open(configPath)
+		if err == nil {
+			var configured fileSettings
+			metadata, decodeErr := toml.NewDecoder(file).Decode(&configured)
+			closeErr := file.Close()
+			if decodeErr != nil {
+				return settings{}, fmt.Errorf("decode config %q: %w", configPath, decodeErr)
+			}
+			if closeErr != nil {
+				return settings{}, closeErr
+			}
+			if unknown := metadata.Undecoded(); len(unknown) != 0 {
+				return settings{}, fmt.Errorf("unknown config key(s): %v", unknown)
+			}
+			setTomlValue := func(key string, value string) {
+				if metadata.IsDefined(key) {
+					values[key] = value
+				}
+			}
+			setTomlValue("username", configured.Username)
+			setTomlValue("password", configured.Password)
+			setTomlValue("ip", configured.IP)
+			setTomlValue("root_folder_id", configured.RootFolderID)
+			if metadata.IsDefined("upload_concurrency") {
+				values["upload_concurrency"] = strconv.Itoa(configured.UploadConcurrency)
+			}
+			if metadata.IsDefined("download_concurrency") {
+				values["download_concurrency"] = strconv.Itoa(configured.DownloadConcurrency)
+			}
+			setTomlValue("request_timeout", configured.RequestTimeout)
+		} else if options.configSpecified || !errors.Is(err, os.ErrNotExist) {
+			return settings{}, fmt.Errorf("open config %q: %w", configPath, err)
 		}
-		if metadata.IsDefined("download_concurrency") {
-			values["download_concurrency"] = strconv.Itoa(configured.DownloadConcurrency)
-		}
-		setTomlValue("request_timeout", configured.RequestTimeout)
-	} else if options.configSpecified || !errors.Is(err, os.ErrNotExist) {
-		return settings{}, fmt.Errorf("open config %q: %w", configPath, err)
 	}
 	for key, envName := range configEnvironment {
 		if value, ok := os.LookupEnv(envName); ok {
@@ -190,18 +196,18 @@ func applyOverrides(values, commandLine map[string]string) (settings, error) {
 	}
 	uploadConcurrency, err := strconv.Atoi(values["upload_concurrency"])
 	if err != nil || uploadConcurrency < 1 {
-		return settings{}, fmt.Errorf("upload_concurrency must be a positive integer, got %q", values["upload_concurrency"])
+		return settings{}, fmt.Errorf("配置无效：upload_concurrency=%q；请使用正整数，通过 --upload-concurrency 或 ILANZOU_UPLOAD_CONCURRENCY 设置", values["upload_concurrency"])
 	}
 	downloadConcurrency, err := strconv.Atoi(values["download_concurrency"])
 	if err != nil || downloadConcurrency < 1 {
-		return settings{}, fmt.Errorf("download_concurrency must be a positive integer, got %q", values["download_concurrency"])
+		return settings{}, fmt.Errorf("配置无效：download_concurrency=%q；请使用正整数，通过 --download-concurrency 或 ILANZOU_DOWNLOAD_CONCURRENCY 设置", values["download_concurrency"])
 	}
 	requestTimeout, err := time.ParseDuration(values["request_timeout"])
 	if err != nil || requestTimeout <= 0 {
-		return settings{}, fmt.Errorf("request_timeout must be a positive Go duration, got %q", values["request_timeout"])
+		return settings{}, fmt.Errorf("配置无效：request_timeout=%q；请使用正时长（例如 30s、10m），通过 --request-timeout 或 ILANZOU_REQUEST_TIMEOUT 设置", values["request_timeout"])
 	}
-	if values["root_folder_id"] == "" {
-		return settings{}, errors.New("root_folder_id cannot be empty")
+	if _, err := strconv.ParseUint(values["root_folder_id"], 10, 64); err != nil {
+		return settings{}, fmt.Errorf("配置无效：root_folder_id=%q；请使用数字文件夹 ID，通过 --root-folder-id 或 ILANZOU_ROOT_FOLDER_ID 设置", values["root_folder_id"])
 	}
 	return settings{
 		username:            values["username"],

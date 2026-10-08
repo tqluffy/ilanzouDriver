@@ -78,6 +78,15 @@ cp ilanzou.toml.example ilanzou.toml
 
 `-c/--config` 可在命令前或命令后指定配置文件路径；默认查找可执行文件同级的 `ilanzou.toml`。密码可以放在命令行参数中，但 shell 历史和进程参数可能会记录它，建议使用配置文件或环境变量。
 
+`--no-config` 会跳过默认和显式指定的所有 TOML 文件，只从命令行和环境变量读取配置；账号、密码必须由这两种来源提供，其他可选项仍使用内置默认值。无配置运行示例：
+
+```sh
+ILANZOU_USERNAME='你的账号' ILANZOU_PASSWORD='你的密码' ./ilanzou --no-config ls
+./ilanzou --no-config --username '你的账号' --password '你的密码' --root-folder-id 404038274 ls
+```
+
+参数缺失或数值无效时，CLI 会提示缺失项以及可用的命令行参数/环境变量名。`--no-config` 与 `-c/--config` 同时出现时，`--no-config` 生效，TOML 路径不会被打开。
+
 `root_folder_id` 默认为账号根目录 `"0"`。设置为其他目录 ID 后，`ls`、新建、上传、下载、移动、重命名和删除都会限定在该目录及其子目录内；上级和同级目录中的对象会被拒绝。配置根目录本身不可移动、重命名或删除。CLI 会从配置根目录向下查找对象归属后再执行操作。
 
 多文件上传和下载使用 Go worker 并行处理，分别受 `upload_concurrency`（默认 4）和 `download_concurrency`（默认 32）限制。并发数限制的是同时传输的文件任务；单个大文件仍按当前七牛分片流程传输。上传可省略目录 ID 以使用配置根目录；显式目标目录 ID 必须是数字 ID 并位于配置根目录内。下载参数按“文件 ID、本地路径”成对重复传入。多文件命令会输出含逐项状态的 JSON。

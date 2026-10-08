@@ -50,6 +50,8 @@ Windows PowerShell：
 ```sh
 export ILANZOU_USERNAME='你的账号'
 export ILANZOU_PASSWORD='你的密码'
+# 可选：映射上游驱动的 Ip 字段，作为 X-Forwarded-For 发送
+export ILANZOU_IP='你的客户端公网 IP'
 ./ilanzou ls
 ./ilanzou ls 目录ID
 ./ilanzou upload 目录ID ./本地文件
@@ -60,9 +62,11 @@ export ILANZOU_PASSWORD='你的密码'
 ./ilanzou delete file 文件ID
 ```
 
+`ILANZOU_IP` 是可选项，对应 Alist iLanZou 驱动的 `Ip` 附加设置；CLI 不会自动猜测或伪造该地址。
+
 `move`、`rename` 和 `delete` 的类型参数可用 `file` 或 `dir`。删除为远端永久删除操作。程序输出 JSON 列表或新建/上传对象信息，包含可用于后续文件操作的 ID。
 
-作为 Go 包使用时，创建 `ilanzou.NewClient(username, password)`，先调用 `Init(ctx)`，再调用 `List`、`Upload`、`Download`、`MakeDir`、`Move`、`Rename` 或 `Remove`。`Download` 返回的 reader 需要由调用者关闭。
+作为 Go 包使用时，创建 `ilanzou.NewClient(username, password)`，可选调用 `SetIP(ip)` 设置 `X-Forwarded-For`，再调用 `Init(ctx)` 和文件操作方法。`Download` 返回的 reader 需要由调用者关闭。
 
 ## 验证说明
 

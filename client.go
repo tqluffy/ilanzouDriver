@@ -2,6 +2,8 @@ package ilanzou
 
 import (
 	"bytes"
+	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"crypto/aes"
 	"crypto/md5"
@@ -38,6 +40,7 @@ const (
 type Client struct {
 	username   string
 	password   string
+	ip         string
 	client     *http.Client
 	noRedirect *http.Client
 
@@ -83,6 +86,12 @@ func NewClient(username, password string) *Client {
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
+}
+
+// SetIP configures the optional X-Forwarded-For value used by the iLanZou API.
+func (c *Client) SetIP(ip string) *Client {
+	c.ip = ip
+	return c
 }
 
 // Init obtains a device UUID and account metadata, logging in when required.
@@ -206,7 +215,7 @@ func (c *Client) Download(ctx context.Context, fileID string) (io.ReadCloser, er
 		if err != nil {
 			return nil, err
 		}
-		setWebHeaders(request)
+		c.setLinkHeaders(request)
 		response, err := c.noRedirect.Do(request)
 		if err != nil {
 			return nil, err
@@ -540,8 +549,7 @@ func (c *Client) api(ctx context.Context, path, method string, proved bool, quer
 	if err != nil {
 		return nil, err
 	}
-	setWebHeaders(request)
-	request.Header.Set("Origin", siteBase)
+	c.setAPIHeaders(request)
 	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -550,7 +558,7 @@ func (c *Client) api(ctx context.Context, path, method string, proved bool, quer
 		return nil, err
 	}
 	defer response.Body.Close()
-	responseBody, err := io.ReadAll(response.Body)
+	responseBody, err := readAPIResponse(response)
 	if err != nil {
 		return nil, err
 	}
@@ -589,15 +597,14 @@ func (c *Client) login(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	setWebHeaders(request)
-	request.Header.Set("Origin", siteBase)
+	c.setAPIHeaders(request)
 	request.Header.Set("Content-Type", "application/json")
 	response, err := c.client.Do(request)
 	if err != nil {
 		return err
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
+	body, err := readAPIResponse(response)
 	if err != nil {
 		return err
 	}
@@ -621,11 +628,47 @@ func (c *Client) login(ctx context.Context) error {
 	return nil
 }
 
-func setWebHeaders(request *http.Request) {
-	request.Header.Set("Accept", "application/json, text/plain, */*")
+func (c *Client) setLinkHeaders(request *http.Request) {
 	request.Header.Set("Referer", siteBase+"/")
 	request.Header.Set("User-Agent", userAgent)
+	if c.ip != "" {
+		request.Header.Set("X-Forwarded-For", c.ip)
+	}
+}
+
+func (c *Client) setAPIHeaders(request *http.Request) {
+	request.Header.Set("Origin", siteBase)
+	request.Header.Set("Referer", siteBase+"/")
+	request.Header.Set("User-Agent", userAgent)
+	request.Header.Set("Accept", "application/json, text/plain, */*")
 	request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,mt;q=0.5")
+	request.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+	if c.ip != "" {
+		request.Header.Set("X-Forwarded-For", c.ip)
+	}
+}
+
+func readAPIResponse(response *http.Response) ([]byte, error) {
+	var reader io.Reader = response.Body
+	var closeReader io.Closer
+	switch strings.ToLower(response.Header.Get("Content-Encoding")) {
+	case "gzip":
+		gzipReader, err := gzip.NewReader(response.Body)
+		if err != nil {
+			return nil, err
+		}
+		reader, closeReader = gzipReader, gzipReader
+	case "deflate":
+		deflateReader, err := zlib.NewReader(response.Body)
+		if err != nil {
+			return nil, err
+		}
+		reader, closeReader = deflateReader, deflateReader
+	}
+	if closeReader != nil {
+		defer closeReader.Close()
+	}
+	return io.ReadAll(reader)
 }
 
 func encryptHex(plain string) string {

@@ -50,7 +50,7 @@ func run(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
-	client := ilanzou.NewClient(username, password)
+	client := ilanzou.NewClient(username, password).SetIP(os.Getenv("ILANZOU_IP"))
 	if err := client.Init(ctx); err != nil {
 		return err
 	}
@@ -187,6 +187,7 @@ func usage() {
   从环境变量读取，不写入配置文件或命令行参数：
   ILANZOU_USERNAME     iLanZou 账号
   ILANZOU_PASSWORD     iLanZou 密码
+  ILANZOU_IP           可选；作为 X-Forwarded-For 发送，与上游驱动的 Ip 设置对应
 
 命令：
   ls [目录ID]                           列出目录，省略时列出根目录
@@ -206,6 +207,8 @@ func usage() {
 示例（Linux/macOS）：
   export ILANZOU_USERNAME='你的账号'
   export ILANZOU_PASSWORD='你的密码'
+  # 可选：设置在原 iLanZou 驱动 Ip 字段中使用的客户端 IP
+  export ILANZOU_IP='你的客户端公网 IP'
   ./ilanzou ls
   ./ilanzou mkdir 0 backup
   ./ilanzou upload 目录ID ./报告.pdf
@@ -217,6 +220,8 @@ func usage() {
 示例（Windows PowerShell）：
   $env:ILANZOU_USERNAME = '你的账号'
   $env:ILANZOU_PASSWORD = '你的密码'
+  # 可选
+  $env:ILANZOU_IP = '你的客户端公网 IP'
   .\ilanzou.exe ls
   .\ilanzou.exe upload 目录ID .\报告.pdf
   .\ilanzou.exe download 文件ID .\报告.pdf

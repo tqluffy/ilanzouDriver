@@ -351,31 +351,45 @@ func (c *Client) Upload(ctx context.Context, folderID, localPath string) (Entry,
 	name := filepath.Base(localPath)
 	md5sum := hex.EncodeToString(hash.Sum(nil))
 	body, err := c.api(ctx, "/proved/7n/getUpToken", http.MethodPost, true, nil, map[string]interface{}{
-		"fileId": "", "fileName": name, "fileSize": info.Size()/1024 + 1,
+		"fileId": "", "fileName": name, "fileSize": max((info.Size()+1023)/1024, 1),
 		"folderId": folderID, "md5": md5sum, "type": 1,
 	}, false)
 	if err != nil {
 		return Entry{}, err
 	}
 	var tokenResponse struct {
-		UpToken string `json:"upToken"`
+		UpToken stringValue `json:"upToken"`
+		Map     struct {
+			FileName string      `json:"fileName"`
+			FileID   stringValue `json:"fileId"`
+		} `json:"map"`
 	}
 	if err := json.Unmarshal(body, &tokenResponse); err != nil {
 		return Entry{}, err
 	}
-	if tokenResponse.UpToken == "" {
+	upToken := string(tokenResponse.UpToken)
+	if upToken == "-1" {
+		// The iLanZou API has already resolved a matching file by hash.
+		fileID := string(tokenResponse.Map.FileID)
+		if fileID == "" {
+			return Entry{}, errors.New("iLanZou rapid-upload response did not include a file ID")
+		}
+		return Entry{ID: fileID, Name: tokenResponse.Map.FileName, Size: info.Size(), Modified: info.ModTime()}, nil
+	}
+	if upToken == "" {
 		return Entry{}, errors.New("iLanZou returned an empty Qiniu upload token")
 	}
 	c.mu.Lock()
 	account := c.account
 	c.mu.Unlock()
 	now := time.Now()
-	key := fmt.Sprintf("disk/%d/%d/%d/%s/%016d", now.Year(), now.Month(), now.Day(), account, nextUploadKeyTimestamp())
+	// Match the current console's Qiniu object key layout.
+	key := fmt.Sprintf("disk/%04d/%02d/%02d/%s/%d.rar", now.Year(), now.Month(), now.Day(), account, nextUploadKeyTimestamp())
 	var token string
 	if info.Size() <= partSize {
-		token, err = c.uploadSingle(ctx, tokenResponse.UpToken, key, name, file, info.Size())
+		token, err = c.uploadSingle(ctx, upToken, key, name, file, info.Size())
 	} else {
-		token, err = c.uploadMultipart(ctx, tokenResponse.UpToken, key, name, file, info.Size())
+		token, err = c.uploadMultipart(ctx, upToken, key, name, file, info.Size())
 	}
 	if err != nil {
 		return Entry{}, err
@@ -439,7 +453,7 @@ func (c *Client) uploadSingle(ctx context.Context, token, key, name string, file
 	}
 	request.Header.Set("Content-Type", contentType)
 	request.ContentLength = contentLength
-	responseBody, err := c.qiniuDo(request)
+	responseBody, status, err := c.qiniuDo(request)
 	if err != nil {
 		return "", fmt.Errorf("Qiniu single-part upload: %w", err)
 	}
@@ -448,6 +462,9 @@ func (c *Client) uploadSingle(ctx context.Context, token, key, name string, file
 	}
 	if err := json.Unmarshal(responseBody, &response); err != nil {
 		return "", err
+	}
+	if response.Token == "" {
+		return "", fmt.Errorf("Qiniu single-part upload: %w", qiniuMissingField(status, responseBody, "token"))
 	}
 	return response.Token, nil
 }
@@ -460,15 +477,18 @@ func (c *Client) uploadMultipart(ctx context.Context, token, key, name string, f
 		return "", err
 	}
 	request.Header.Set("Authorization", "UpToken "+token)
-	body, err := c.qiniuDo(request)
+	body, status, err := c.qiniuDo(request)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("Qiniu multipart initialize: %w", err)
 	}
 	var initResponse struct {
 		UploadID string `json:"uploadId"`
 	}
 	if err := json.Unmarshal(body, &initResponse); err != nil {
-		return "", err
+		return "", fmt.Errorf("Qiniu multipart initialize: %w", err)
+	}
+	if initResponse.UploadID == "" {
+		return "", fmt.Errorf("Qiniu multipart initialize: %w", qiniuMissingField(status, body, "uploadId"))
 	}
 	parts := make([]struct {
 		PartNumber int    `json:"partNumber"`
@@ -486,15 +506,18 @@ func (c *Client) uploadMultipart(ctx context.Context, token, key, name string, f
 		}
 		request.ContentLength = length
 		request.Header.Set("Authorization", "UpToken "+token)
-		body, err = c.qiniuDo(request)
+		body, status, err = c.qiniuDo(request)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("Qiniu multipart part %d: %w", number, err)
 		}
 		var partResponse struct {
 			ETag string `json:"etag"`
 		}
 		if err := json.Unmarshal(body, &partResponse); err != nil {
-			return "", err
+			return "", fmt.Errorf("Qiniu multipart part %d: %w", number, err)
+		}
+		if partResponse.ETag == "" {
+			return "", fmt.Errorf("Qiniu multipart part %d: %w", number, qiniuMissingField(status, body, "etag"))
 		}
 		parts = append(parts, struct {
 			PartNumber int    `json:"partNumber"`
@@ -515,33 +538,55 @@ func (c *Client) uploadMultipart(ctx context.Context, token, key, name string, f
 	}
 	request.Header.Set("Authorization", "UpToken "+token)
 	request.Header.Set("Content-Type", "application/json")
-	body, err = c.qiniuDo(request)
+	body, status, err = c.qiniuDo(request)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("Qiniu multipart complete: %w", err)
 	}
 	var response struct {
 		Token string `json:"token"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
-		return "", err
+		return "", fmt.Errorf("Qiniu multipart complete: %w", err)
+	}
+	if response.Token == "" {
+		return "", fmt.Errorf("Qiniu multipart complete: %w", qiniuMissingField(status, body, "token"))
 	}
 	return response.Token, nil
 }
 
-func (c *Client) qiniuDo(request *http.Request) ([]byte, error) {
+func (c *Client) qiniuDo(request *http.Request) ([]byte, int, error) {
 	response, err := c.client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, err
+		return nil, response.StatusCode, err
 	}
-	// Match the upstream Resty flow: an HTTP status alone is not treated as a
-	// transport error; the iLanZou upload-result endpoint decides whether the
-	// uploaded object was committed.
-	return body, nil
+	// Qiniu uses 579 for an object upload that succeeded while its callback failed.
+	if (response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices) && response.StatusCode != 579 {
+		var responseError struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(body, &responseError)
+		if responseError.Error != "" {
+			return body, response.StatusCode, fmt.Errorf("HTTP %d: %s", response.StatusCode, responseError.Error)
+		}
+		return body, response.StatusCode, fmt.Errorf("HTTP %d", response.StatusCode)
+	}
+	return body, response.StatusCode, nil
+}
+
+func qiniuMissingField(status int, body []byte, field string) error {
+	var responseError struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(body, &responseError)
+	if responseError.Error != "" {
+		return fmt.Errorf("Qiniu HTTP %d response did not contain %s: %s", status, field, responseError.Error)
+	}
+	return fmt.Errorf("Qiniu HTTP %d response did not contain %s", status, field)
 }
 
 func (c *Client) api(ctx context.Context, path, method string, proved bool, query url.Values, payload interface{}, retried bool) ([]byte, error) {

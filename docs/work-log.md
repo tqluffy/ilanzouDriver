@@ -148,3 +148,13 @@
 - 此模式仅应用命令行参数、环境变量和内置默认值；账号、密码必须由命令行或环境变量提供。其他配置仍采用内置默认值（根目录 `0`、上传并发 4、下载并发 32、请求超时 10 分钟）。
 - 参数不足时给出账号/密码来源提示；并发数、请求超时或根目录 ID 无效时提示对应参数名和环境变量名。若同时指定 `--no-config` 和 `-c/--config`，以 `--no-config` 为准并跳过配置文件。
 - 已更新完整 `-h`、README 和本工作日志，并重编 Linux/Windows CLI。使用损坏的 README TOML 路径配合 `--no-config`、缺失账号密码时，程序跳过 TOML 并显示必填提示；并发数设为 0、根目录 ID 非数字时均显示对应参数/环境变量提示。未执行网盘操作。
+
+## 上传空 token 排查与修复分支（2026-10-08）
+
+- 分支：`fix/ilanzou-upload-token`。本节修改和构建均在该分支。
+- 错误原路径：上传 API 从 `/proved/7n/getUpToken` 取 `upToken`，Qiniu 单次/分片完成响应中取 `token`，然后以 `tokenList` 调用 `/unproved/7n/results`。原代码没有校验 Qiniu token 是否为空；`qiniuDo` 也没有检查非 2xx 状态，因此 Qiniu JSON 错误响应可能被当成正常响应继续传递，最终只显示 iLanZou 的“token不能为空”。
+- 对照 OpenList 当前 iLanZou 驱动，增加 `upToken="-1"` 秒传分支，直接返回其 `map.fileId/fileName`，跳过 Qiniu 和 `/results`；文件大小改为向上取整 KiB（至少 1）；Qiniu key 改为 `disk/YYYY/MM/DD/account/<timestamp>.rar`，对齐 OpenList 当前控制台格式。
+- Qiniu 单次、分片初始化、分片上传和完成阶段现在检查 HTTP 状态以及必需的 `uploadId`、`etag`、`token` 字段。Qiniu 非 2xx 错误（579 除外）会在原请求阶段返回状态码和 JSON `error`，Qiniu 响应无 token 时停止，不再以空 token 请求 iLanZou results。HTTP 579 按 Qiniu“上传成功但回调失败”响应保留正文，后续仍要求结果 token。
+- 既有 64 文件下载预置脚本用相同内容写入所有不同名称的文件；该模式会重复 MD5。结合 OpenList 的 `upToken="-1"` 处理，此前除首个样本外的空 token 错误很可能由未处理秒传响应触发。不同内容的并发上传也曾出现空 token，因此 Qiniu 状态/响应字段诊断仍有价值。
+- OpenList 当前同样会从普通 Qiniu 响应读取 `token` 并调用 `/results`，没有通用的空 token 校验；本分支增加了该校验及 Qiniu 状态错误透传。公开同类报告包括 [Alist #5928](https://github.com/AlistGo/alist/issues/5928)、[Alist #8104](https://github.com/AlistGo/alist/issues/8104) 和 [Alist 文档讨论 #380](https://github.com/AlistGo/docs/discussions/380)。
+- 重新构建 Linux/Windows CLI、Linux `.so/.a`、Windows `.dll/.a`；未运行网盘上传或远端功能测试。源码依据：[Alist iLanZou](https://github.com/AlistGo/alist/blob/main/drivers/ilanzou/driver.go)、[OpenList iLanZou](https://github.com/OpenListTeam/OpenList/blob/main/drivers/ilanzou/driver.go)、[七牛直传响应](https://developer.qiniu.com/kodo/1312/upload)、[七牛分片完成响应](https://developer.qiniu.com/kodo/6368/complete-multipart-upload)。

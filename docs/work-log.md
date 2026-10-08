@@ -123,3 +123,12 @@
 - 按用户要求，将未设置 `download_concurrency` 时的默认值从 4 调整为 32；上传并发默认值仍为 4，账号根目录和请求超时默认值保持不变。
 - 同步更新 `cmd/ilanzou/config.go` 的运行时默认值、CLI `-h` 帮助、README 参数表和 `ilanzou.toml.example`。
 - 重新构建 Linux 与 Windows CLI；核对 Linux `-h` 中显示下载默认并发为 32。未执行网盘远端操作或功能测试。
+
+## 静态和动态库构建（2026-10-08）
+
+- 增加公开 Go `ScopedClient`，复用根目录范围校验，并提供列目录、创建目录、上传、下载、移动、重命名和删除方法。CLI 已改用该类型执行文件操作。
+- 增加 `cmd/ilanzouffi` C ABI 入口，提供会话创建/初始化/关闭、JSON 列表和创建/上传、下载到本地路径、移动/重命名/删除及 C 字符串释放接口。C ABI 会话通过 `ScopedClient` 保持根目录隔离。
+- Linux x86-64 构建产物：`dist/libilanzou-linux-amd64.a`（C 静态库）、`dist/libilanzou-linux-amd64.so`（C 动态库）、`dist/libilanzou-linux-amd64.h`（cgo 生成头文件）。使用当前 Linux GCC 构建。
+- 现有 Linux 与 Windows CLI 均已重编，以使用提取到 Go 公共库的根目录范围实现。
+- 当前环境没有 Windows amd64 cgo 交叉编译器（MinGW），因此未构建 Windows DLL/静态库；原 Linux/Windows CLI 文件仍是独立交付物。
+- README 增加 Go/C 接口、库文件用法和构建说明。未运行网盘远端操作或功能测试。

@@ -84,7 +84,68 @@ cp ilanzou.toml.example ilanzou.toml
 
 `move`、`rename` 和 `delete` 的类型参数可用 `file` 或 `dir`。删除为远端永久删除操作。程序输出 JSON 列表或新建/上传对象信息，包含可用于后续文件操作的 ID。
 
-作为 Go 包使用时，创建 `ilanzou.NewClient(username, password)`，可选调用 `SetIP(ip)` 设置 `X-Forwarded-For`，再调用 `Init(ctx)` 和文件操作方法。`Download` 返回的 reader 需要由调用者关闭。
+## 作为库引入
+
+Go 程序可直接依赖本模块 `ilanzou`，使用 `NewClient` 或带根目录隔离的 `NewScopedClient`。`Client` 提供底层 API；`ScopedClient` 将列目录、新建、上传、下载、移动、重命名和删除限制在指定根目录及其子目录。调用前先运行 `Init`。
+
+Linux x86-64 提供 C ABI 库，其他支持 C ABI/FFI 的语言也可以调用：
+
+- `dist/libilanzou-linux-amd64.so`：动态库
+- `dist/libilanzou-linux-amd64.a`：静态库
+- `dist/libilanzou-linux-amd64.h`：对应头文件
+
+C 接口采用 session handle。`IlanzouNew` 创建 handle，`IlanzouInit` 登录；列表、创建目录、上传等操作返回 JSON 字符串。下载写入指定本地路径。操作函数返回 `0` 表示成功，非 `0` 表示失败；错误文本和 JSON 字符串由库分配，调用方必须通过 `IlanzouFreeString` 释放，完成后通过 `IlanzouClose` 关闭 handle。创建 handle 时传入非空根目录 ID 会启用与 CLI 相同的目录范围限制；传空字符串或 `"0"` 表示账号根目录。请求超时参数单位为毫秒，传 `0` 使用默认 10 分钟。移动、重命名、删除函数中的 `isDir` 传 `0` 表示文件，非 `0` 表示目录。
+
+从源码重新生成 Linux 库：
+
+```sh
+CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -buildmode=c-shared -o dist/libilanzou-linux-amd64.so ./cmd/ilanzouffi
+CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -buildmode=c-archive -o dist/libilanzou-linux-amd64.a ./cmd/ilanzouffi
+```
+
+两条命令都会生成匹配的 `.h` 头文件。
+
+构建 C/C++ 程序的示例：
+
+```sh
+# 动态链接
+gcc app.c -Idist -Ldist -lilanzou-linux-amd64 -Wl,-rpath,'$ORIGIN' -o app
+
+# 静态链接
+gcc app.c dist/libilanzou-linux-amd64.a -pthread -ldl -lm -o app
+```
+
+最小 C 调用示例：
+
+```c
+#include "libilanzou-linux-amd64.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+    uint64_t handle = 0;
+    char *error = NULL;
+    char *json = NULL;
+    int status = IlanzouNew(getenv("ILANZOU_USERNAME"),
+                            getenv("ILANZOU_PASSWORD"),
+                            getenv("ILANZOU_IP"), "0", 0,
+                            &handle, &error);
+    if (status == 0) status = IlanzouInit(handle, &error);
+    if (status == 0) status = IlanzouList(handle, "0", &json, &error);
+    if (status == 0) puts(json);
+    if (json != NULL) IlanzouFreeString(json);
+    if (handle != 0) IlanzouClose(handle);
+    if (error != NULL) {
+        fprintf(stderr, "%s\n", error);
+        IlanzouFreeString(error);
+    }
+    return status;
+}
+```
+
+这些库以 Linux amd64 和当前 Go/cgo 工具链构建。生成 Windows DLL 或静态库需要 Windows amd64 的 cgo 交叉编译器（例如 MinGW）；本次构建环境没有该工具链，因此未生成 Windows 库。
+
+作为 Go 包使用时，创建 `ilanzou.NewClient(username, password)`，可选调用 `SetIP(ip)` 设置 `X-Forwarded-For`，再调用 `Init(ctx)`。需要根目录隔离时，用 `ilanzou.NewScopedClient(client, rootFolderID)` 执行文件操作；底层 `Client` 本身不限制目录范围。`Download` 返回的 reader 需要由调用者关闭。
 
 ## 验证说明
 

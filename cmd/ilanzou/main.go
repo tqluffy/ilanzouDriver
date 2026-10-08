@@ -63,7 +63,7 @@ func run(args []string) error {
 	if err := client.Init(ctx); err != nil {
 		return err
 	}
-	scope := newRemoteScope(client, config.rootFolderID)
+	scope := ilanzou.NewScopedClient(client, config.rootFolderID)
 
 	switch command {
 	case "ls":
@@ -74,10 +74,7 @@ func run(args []string) error {
 		if len(commandArgs) == 1 {
 			folderID = commandArgs[0]
 		}
-		if err := scope.requireFolder(ctx, folderID); err != nil {
-			return err
-		}
-		entries, err := client.List(ctx, folderID)
+		entries, err := scope.List(ctx, folderID)
 		if err != nil {
 			return err
 		}
@@ -91,10 +88,7 @@ func run(args []string) error {
 		} else {
 			return errors.New("usage: ilanzou mkdir [parent-folder-id] <name>")
 		}
-		if err := scope.requireFolder(ctx, parentID); err != nil {
-			return err
-		}
-		entry, err := client.MakeDir(ctx, parentID, name)
+		entry, err := scope.MakeDir(ctx, parentID, name)
 		if err != nil {
 			return err
 		}
@@ -108,13 +102,10 @@ func run(args []string) error {
 		if len(commandArgs) > 1 && isNumericID(commandArgs[0]) {
 			folderID, files = commandArgs[0], commandArgs[1:]
 		}
-		if err := scope.requireFolder(ctx, folderID); err != nil {
-			return err
-		}
 		entries := make([]ilanzou.Entry, len(files))
 		outcomes := make([]uploadOutcome, len(files))
 		err := runConcurrent(config.uploadConcurrency, len(files), func(index int) error {
-			entry, err := client.Upload(ctx, folderID, files[index])
+			entry, err := scope.Upload(ctx, folderID, files[index])
 			if err != nil {
 				outcomes[index] = uploadOutcome{LocalFile: files[index], Error: err.Error()}
 				return fmt.Errorf("upload %q: %w", files[index], err)
@@ -141,15 +132,12 @@ func run(args []string) error {
 		outcomes := make([]downloadOutcome, len(tasks))
 		for i := range tasks {
 			tasks[i] = downloadTask{fileID: commandArgs[2*i], path: commandArgs[2*i+1]}
-			if _, err := scope.requireObject(ctx, tasks[i].fileID, false); err != nil {
-				return err
-			}
 		}
 		if err := distinctDownloadPaths(tasks); err != nil {
 			return err
 		}
 		err := runConcurrent(config.downloadConcurrency, len(tasks), func(index int) error {
-			if err := downloadTo(ctx, client, tasks[index].fileID, tasks[index].path); err != nil {
+			if err := downloadTo(ctx, scope, tasks[index].fileID, tasks[index].path); err != nil {
 				outcomes[index] = downloadOutcome{FileID: tasks[index].fileID, LocalFile: tasks[index].path, Error: err.Error()}
 				return fmt.Errorf("download %q to %q: %w", tasks[index].fileID, tasks[index].path, err)
 			}
@@ -175,16 +163,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := scope.requireObject(ctx, commandArgs[1], isDir); err != nil {
-			return err
-		}
-		if err := scope.requireFolder(ctx, commandArgs[2]); err != nil {
-			return err
-		}
-		if isDir && scope.isDescendant(commandArgs[2], commandArgs[1]) {
-			return errors.New("cannot move a folder into itself or one of its descendants")
-		}
-		if err := client.Move(ctx, commandArgs[1], isDir, commandArgs[2]); err != nil {
+		if err := scope.Move(ctx, commandArgs[1], isDir, commandArgs[2]); err != nil {
 			return err
 		}
 		fmt.Println("moved")
@@ -197,10 +176,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := scope.requireObject(ctx, commandArgs[1], isDir); err != nil {
-			return err
-		}
-		if err := client.Rename(ctx, commandArgs[1], isDir, commandArgs[2]); err != nil {
+		if err := scope.Rename(ctx, commandArgs[1], isDir, commandArgs[2]); err != nil {
 			return err
 		}
 		fmt.Println("renamed")
@@ -213,10 +189,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := scope.requireObject(ctx, commandArgs[1], isDir); err != nil {
-			return err
-		}
-		if err := client.Remove(ctx, commandArgs[1], isDir); err != nil {
+		if err := scope.Remove(ctx, commandArgs[1], isDir); err != nil {
 			return err
 		}
 		fmt.Println("deleted")
@@ -271,7 +244,7 @@ func runConcurrent(limit, count int, work func(int) error) error {
 	return errors.Join(errorsByIndex...)
 }
 
-func downloadTo(ctx context.Context, client *ilanzou.Client, fileID, path string) error {
+func downloadTo(ctx context.Context, client *ilanzou.ScopedClient, fileID, path string) error {
 	reader, err := client.Download(ctx, fileID)
 	if err != nil {
 		return err

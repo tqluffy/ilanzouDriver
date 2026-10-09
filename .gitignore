@@ -2,6 +2,7 @@
 /cmd/ilanzou/ilanzou
 *.test
 *.out
+*.toml
 ilanzou.toml
 ilanzou-webdav.toml
 ilanzou-webdav.log
